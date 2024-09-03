@@ -7,7 +7,7 @@ use tokio::sync::Mutex;
 use tracing::info;
 use uuid::Uuid;
 
-use crate::{models::*, AppState};
+use crate::{auth::UserClaims, models::*, AppState};
 
 /// TODO: Update
 pub fn router() -> axum::Router<AppState> {
@@ -15,6 +15,11 @@ pub fn router() -> axum::Router<AppState> {
         .route("/listing", get(get_all_listings).post(create_listing))
         .route("/listing/:id", get(get_listing))
         .route("/image", post(upload_image))
+        .route("/protected", get(protected_route))
+}
+
+async fn protected_route(user: UserClaims) -> Json<UserClaims> {
+    Json(user)
 }
 
 async fn get_all_listings(State(db): State<Arc<Mutex<PgConnection>>>) -> Result<Json<Vec<Listing>>, StatusCode> {

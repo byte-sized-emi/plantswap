@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use auth::{initialize_auth, AuthState};
 use aws_config::{meta::region::RegionProviderChain, BehaviorVersion};
 use aws_sdk_s3::{config::Credentials, Client};
 use axum::{extract::{DefaultBodyLimit, FromRef}, response::Redirect, routing::get, Router};
@@ -16,12 +17,14 @@ mod backend;
 mod models;
 mod schema;
 mod config;
+mod auth;
 
 #[derive(Clone, FromRef)]
 struct AppState {
     pub db: Arc<Mutex<PgConnection>>,
     pub s3_client: Client,
     pub config: Arc<AppConfig>,
+    pub auth_state: Arc<AuthState>,
 }
 
 #[tokio::main]
@@ -54,13 +57,16 @@ async fn main() {
 
     let s3_client = Client::from_conf(s3_config);
 
-    let global_state = AppState { db, s3_client, config: Arc::new(config) };
+    let auth_state = Arc::new(initialize_auth(&config).await);
+
+    let global_state = AppState { db, s3_client, config: Arc::new(config), auth_state };
 
     let app = Router::new()
         .route("/", get(|| async { Redirect::permanent("/home") }))
         .route("/home", get(render_homepage))
         .route("/about", get(render_about))
         .route("/ping", get(|| async { "Pong" }))
+        .nest("/auth", auth::router())
         .nest("/api/v1/", backend::router())
         .nest_service("/assets", ServeDir::new("assets"))
         .with_state(global_state)
