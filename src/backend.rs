@@ -63,7 +63,7 @@ struct UploadImageResponse {
 
 async fn upload_image(State(state): State<AppState>, mut multipart: Multipart) -> Result<Json<UploadImageResponse>, (StatusCode, String)> {
     let client = state.s3_client;
-    let bucket = state.s3_images_bucket;
+    let bucket = state.config.s3_images_bucket();
 
     let file_key = Uuid::now_v7();
 

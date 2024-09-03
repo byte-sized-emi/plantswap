@@ -1,8 +1,9 @@
-use std::{env, sync::Arc};
+use std::sync::Arc;
 
 use aws_config::{meta::region::RegionProviderChain, BehaviorVersion};
 use aws_sdk_s3::{config::Credentials, Client};
 use axum::{extract::{DefaultBodyLimit, FromRef}, response::Redirect, routing::get, Router};
+use config::AppConfig;
 use diesel::{Connection, PgConnection};
 use frontend::{render_about, render_homepage};
 use tower_http::services::ServeDir;
@@ -14,12 +15,13 @@ mod frontend;
 mod backend;
 mod models;
 mod schema;
+mod config;
 
 #[derive(Clone, FromRef)]
 struct AppState {
     pub db: Arc<Mutex<PgConnection>>,
     pub s3_client: Client,
-    pub s3_images_bucket: String,
+    pub config: Arc<AppConfig>,
 }
 
 #[tokio::main]
@@ -30,34 +32,29 @@ async fn main() {
         .with_env_filter(EnvFilter::from_env("PLANTS_LOG"))
         .init();
 
-    let database_url = env::var("PLANTS_DATABASE_URL").expect("PLANTS_DATABASE_URL must be set");
+    let config = AppConfig::new();
 
-    let con = PgConnection::establish(&database_url)
-            .unwrap_or_else(|_| panic!("Error connecting to {}", database_url));
+    let con = PgConnection::establish(config.database_url())
+            .unwrap_or_else(|_| panic!("Error connecting to {}", config.database_url()));
 
     let db = Arc::new(Mutex::new(con));
 
-    let s3_endpoint = env::var("PLANTS_S3_ENDPOINT").expect("PLANTS_S3_ENDPOINT must be set");
-    let s3_access_key = env::var("PLANTS_S3_ACCESS_KEY").expect("PLANTS_S3_ACCESS_KEY must be set");
-    let s3_secret_key = env::var("PLANTS_S3_SECRET_KEY").expect("PLANTS_S3_SECRET_KEY must be set");
-
     let region_provider = RegionProviderChain::default_provider().or_else("us-east-1");
-    let config = aws_config::defaults(BehaviorVersion::latest())
+    let credentials_provider = Credentials::new(config.s3_access_key(), config.s3_secret_key(), None, None, "Environment");
+    let s3_config = aws_config::defaults(BehaviorVersion::latest())
         .region(region_provider)
-        .endpoint_url(s3_endpoint)
-        .credentials_provider(Credentials::new(s3_access_key, s3_secret_key, None, None, "Environment"))
+        .endpoint_url(config.s3_endpoint())
+        .credentials_provider(credentials_provider)
         .load().await;
 
-    let s3_config: aws_sdk_s3::Config = (&config).into();
+    let s3_config: aws_sdk_s3::Config = (&s3_config).into();
     let s3_config = s3_config.to_builder()
         .force_path_style(true)
         .build();
 
     let s3_client = Client::from_conf(s3_config);
 
-    let s3_images_bucket = env::var("PLANTS_S3_IMAGES_BUCKET").expect("PLANTS_S3_IMAGES_BUCKET must be set");
-
-    let global_state = AppState { db, s3_client, s3_images_bucket };
+    let global_state = AppState { db, s3_client, config: Arc::new(config) };
 
     let app = Router::new()
         .route("/", get(|| async { Redirect::permanent("/home") }))
