@@ -1,0 +1,64 @@
+html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+}
+
+#main-wrapper {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+}
+
+article {
+    flex: 1;
+    padding-left: 200px;
+    padding-right: 200px;
+    display: flex;
+    flex-direction: column;
+    align-content: center;
+    align-items: center;
+}
+
+header {
+    text-align: center;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    padding-top: 25px;
+    padding-bottom: 25px;
+    padding-left: 50px;
+    padding-right: 50px;
+    background-color: lightgreen;
+}
+
+footer {
+    text-align: center;
+    padding: 10px;
+    background-color: grey;
+}
+
+nav {
+    display: flex;
+    flex-direction: row;
+    gap: 15px;
+    justify-content: center;
+    align-items: center;
+}
+
+.header-site-name {
+    align-content: center;
+}
+
+.page-selector {
+    text-decoration: none;
+    color: blue;
+    background: lightblue;
+    padding: 10px;
+    border-radius: 20px;
+}
+
+.page-selector.current-page-selector {
+    color: red;
+    background: pink;
+}
