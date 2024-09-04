@@ -15,10 +15,15 @@ dotenvy = "0.15.7"
 jsonwebtoken = "9.3.0"
 maud = { version = "0.26.0", features = ["axum"] }
 oauth2 = "4.4.2"
-reqwest = { version = "0.12.7", features = ["json"] }
+reqwest = { version = "0.11", features = ["json"] }
 serde = { version = "1.0.209", features = ["derive"] }
+thiserror = "1.0.63"
 tokio = { version = "1.40.0", features = ["full"] }
 tower-http = { version = "0.5.2", features = ["fs"] }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 uuid = { version = "1.10.0", features = ["serde", "v4", "v7"] }
+
+tower-sessions-moka-store = "0.13.0"
+tower-sessions-redis-store = "0.13.0"
+axum-login = "0.15.3"

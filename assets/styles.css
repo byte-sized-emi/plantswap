@@ -38,16 +38,26 @@ footer {
     background-color: grey;
 }
 
-nav {
+.header-left-side {
     display: flex;
     flex-direction: row;
-    gap: 15px;
-    justify-content: center;
-    align-items: center;
+    gap: 20px;
+}
+
+.login-or-profile-button {
+    align-content: center;
 }
 
 .header-site-name {
     align-content: center;
+}
+
+nav {
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+    justify-content: center;
+    align-items: center;
 }
 
 .page-selector {

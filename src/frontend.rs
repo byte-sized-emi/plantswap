@@ -1,18 +1,19 @@
 use axum_htmx::HxRequest;
 use maud::{html, Markup};
 
+use crate::auth::AuthSession;
 
-pub async fn render_homepage(HxRequest(is_htmx): HxRequest) -> Markup {
+pub async fn render_homepage(HxRequest(is_htmx): HxRequest, auth_session: AuthSession) -> Markup {
     let content = html! {
         p {
             "A place for you to buy, sell, trade, and gift plants to other people."
         }
     };
 
-    render_page(PageSelection::Home, content, is_htmx)
+    render_page(PageSelection::Home, content, is_htmx, auth_session)
 }
 
-pub async fn render_about(HxRequest(is_htmx): HxRequest) -> Markup {
+pub async fn render_about(HxRequest(is_htmx): HxRequest, auth_session: AuthSession) -> Markup {
     let content = html! {
         p {
             "A place for you to buy, sell, trade, and gift plants to other people."
@@ -21,10 +22,10 @@ pub async fn render_about(HxRequest(is_htmx): HxRequest) -> Markup {
         }
     };
 
-    render_page(PageSelection::About, content, is_htmx)
+    render_page(PageSelection::About, content, is_htmx, auth_session)
 }
 
-fn render_page(page_selection: PageSelection, content: Markup, is_htmx: bool) -> Markup {
+fn render_page(page_selection: PageSelection, content: Markup, is_htmx: bool, auth_session: AuthSession) -> Markup {
     if is_htmx {
         html! {
             (render_page_selector(page_selection))
@@ -37,7 +38,7 @@ fn render_page(page_selection: PageSelection, content: Markup, is_htmx: bool) ->
                 (render_head())
                 body {
                     div #main-wrapper {
-                        header { (render_header(page_selection))}
+                        header { (render_header(page_selection, auth_session))}
                         article #page { (content) }
                         footer { "Footer" }
                     }
@@ -47,12 +48,15 @@ fn render_page(page_selection: PageSelection, content: Markup, is_htmx: bool) ->
     }
 }
 
-fn render_header(page_selection: PageSelection) -> Markup {
+fn render_header(page_selection: PageSelection, auth_session: AuthSession) -> Markup {
     html! {
-        div .header-site-name {
-            "Plant swap"
+        div .header-left-side {
+            div .header-site-name {
+                "Plant swap"
+            }
+            (render_page_selector(page_selection))
         }
-        (render_page_selector(page_selection))
+        (render_login_button(auth_session))
     }
 }
 
@@ -89,6 +93,18 @@ fn render_page_selector(current_selection: PageSelection) -> Markup {
                 a href=(selection.href()) hx-get=(selection.href()) .page-selector .current-page-selector[selection == &current_selection] {
                     (selection.render())
                 }
+            }
+        }
+    }
+}
+
+fn render_login_button(auth_session: AuthSession) -> Markup {
+    html! {
+        div .login-or-profile-button {
+            @if let Some(user) = auth_session.user {
+                (user.claims.name)
+            } @else {
+                a href="/auth/login" { "Login" }
             }
         }
     }

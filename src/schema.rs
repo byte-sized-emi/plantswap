@@ -54,6 +54,14 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    user_sessions (id) {
+        id -> Uuid,
+        #[max_length = 10240]
+        access_token -> Varchar,
+    }
+}
+
 diesel::joinable!(listings -> images (thumbnail));
 diesel::joinable!(listings -> plants (identified_plant));
 
@@ -61,4 +69,5 @@ diesel::allow_tables_to_appear_in_same_query!(
     images,
     listings,
     plants,
+    user_sessions,
 );

@@ -13,6 +13,7 @@ pub struct AppConfig {
     auth_redirect_url: String,
     auth_admin_role: String,
     auth_client_id: String,
+    redis_url: String,
 }
 
 impl AppConfig {
@@ -63,5 +64,9 @@ impl AppConfig {
 
     pub fn auth_client_id(&self) -> &str {
         &self.auth_client_id
+    }
+
+    pub fn redis_url(&self) -> &str {
+        &self.redis_url
     }
 }

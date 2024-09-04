@@ -7,9 +7,9 @@ use tokio::sync::Mutex;
 use tracing::info;
 use uuid::Uuid;
 
-use crate::{auth::UserClaims, models::*, AppState};
+use crate::{auth::{AuthSession, UserClaims}, models::*, AppState};
 
-/// TODO: Update
+/// TODO: Update listings
 pub fn router() -> axum::Router<AppState> {
     axum::Router::new()
         .route("/listing", get(get_all_listings).post(create_listing))
@@ -18,8 +18,10 @@ pub fn router() -> axum::Router<AppState> {
         .route("/protected", get(protected_route))
 }
 
-async fn protected_route(user: UserClaims) -> Json<UserClaims> {
-    Json(user)
+async fn protected_route(auth_session: AuthSession) -> Result<Json<UserClaims>, StatusCode> {
+    let user = auth_session.user.ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(user.claims))
 }
 
 async fn get_all_listings(State(db): State<Arc<Mutex<PgConnection>>>) -> Result<Json<Vec<Listing>>, StatusCode> {
@@ -117,4 +119,3 @@ async fn upload_image(State(state): State<AppState>, mut multipart: Multipart) -
 
     Ok(Json(UploadImageResponse { file_key }))
 }
-

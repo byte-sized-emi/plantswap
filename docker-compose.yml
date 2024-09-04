@@ -40,8 +40,18 @@ services:
     depends_on:
       - postgres
 
+  redis:
+    image: redis:7.4-alpine
+    ports:
+      - '6379:6379'
+    command: redis-server --save 20 1 --loglevel warning
+    volumes:
+      - redis-data:/data
+
 volumes:
   db-data:
     driver: local
   minio-data:
+    driver: local
+  redis-data:
     driver: local
