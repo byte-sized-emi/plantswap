@@ -7,7 +7,6 @@ use axum::{extract::{DefaultBodyLimit, FromRef}, response::Redirect, routing::ge
 use axum_login::{tower_sessions::{CachingSessionStore, SessionManagerLayer}, AuthManagerLayerBuilder};
 use config::AppConfig;
 use diesel::{Connection, PgConnection};
-use frontend::{render_about, render_homepage};
 use tower_http::services::ServeDir;
 use tokio::{net::TcpListener, sync::Mutex};
 use tower_sessions_moka_store::MokaStore;
@@ -78,8 +77,7 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(|| async { Redirect::permanent("/home") }))
-        .route("/home", get(render_homepage))
-        .route("/about", get(render_about))
+        .merge(frontend::router())
         .route("/ping", get(|| async { "Pong" }))
         .nest("/auth", auth::router())
         .nest("/api/v1/", backend::router())

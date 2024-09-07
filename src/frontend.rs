@@ -1,19 +1,57 @@
+use axum::{routing::get, Router};
 use axum_htmx::HxRequest;
+use axum_login::login_required;
 use maud::{html, Markup};
 
-use crate::auth::AuthSession;
+use crate::{auth::{AuthSession, AuthState}, AppState};
 
-pub async fn render_homepage(HxRequest(is_htmx): HxRequest, auth_session: AuthSession) -> Markup {
+pub fn router() -> Router<AppState> {
+    Router::new()
+        .route("/listing/new", get(render_create_listing))
+        .route_layer(login_required!(AuthState, login_url = "/auth/login"))
+        .route("/home", get(render_homepage))
+        .route("/about", get(render_about))
+}
+
+async fn render_create_listing(HxRequest(is_htmx): HxRequest, auth_session: AuthSession) -> Markup {
+    let content = html! {
+        form .new-listing-form hx-post="/listing/new" hx-target="#page" hx-swap="outerHTML"
+            action="/listing/new"
+        {
+            label for="title" { "Title" }
+            input #title type="text" name="title" { }
+
+            label for="description" { "Description" }
+            textarea #description name="description" { }
+
+            // listing_type
+            label for="buying" { "Buying" }
+            input #buying type="radio" name="listing_type" value="buying" { }
+
+            label for="selling" { "Selling" }
+            input #selling type="radio" name="listing_type" value="selling" { }
+            // tradeable
+            label for="tradeable" { "Trade possible"}
+            input #tradeable type="checkbox" name="tradeable" { }
+
+            input type="submit" { "Create listing" }
+        }
+    };
+
+    render_page(Some(PageSelection::About), content, is_htmx, auth_session)
+}
+
+async fn render_homepage(HxRequest(is_htmx): HxRequest, auth_session: AuthSession) -> Markup {
     let content = html! {
         p {
             "A place for you to buy, sell, trade, and gift plants to other people."
         }
     };
 
-    render_page(PageSelection::Home, content, is_htmx, auth_session)
+    render_page(Some(PageSelection::Home), content, is_htmx, auth_session)
 }
 
-pub async fn render_about(HxRequest(is_htmx): HxRequest, auth_session: AuthSession) -> Markup {
+async fn render_about(HxRequest(is_htmx): HxRequest, auth_session: AuthSession) -> Markup {
     let content = html! {
         p {
             "A place for you to buy, sell, trade, and gift plants to other people."
@@ -22,10 +60,10 @@ pub async fn render_about(HxRequest(is_htmx): HxRequest, auth_session: AuthSessi
         }
     };
 
-    render_page(PageSelection::About, content, is_htmx, auth_session)
+    render_page(Some(PageSelection::About), content, is_htmx, auth_session)
 }
 
-fn render_page(page_selection: PageSelection, content: Markup, is_htmx: bool, auth_session: AuthSession) -> Markup {
+fn render_page(page_selection: Option<PageSelection>, content: Markup, is_htmx: bool, auth_session: AuthSession) -> Markup {
     if is_htmx {
         html! {
             (render_page_selector(page_selection))
@@ -48,7 +86,7 @@ fn render_page(page_selection: PageSelection, content: Markup, is_htmx: bool, au
     }
 }
 
-fn render_header(page_selection: PageSelection, auth_session: AuthSession) -> Markup {
+fn render_header(page_selection: Option<PageSelection>, auth_session: AuthSession) -> Markup {
     html! {
         div .header-left-side {
             div .header-site-name {
@@ -66,32 +104,20 @@ enum PageSelection {
     About,
 }
 
-impl PageSelection {
-    fn render(&self) -> &str {
-        use PageSelection::*;
-        match self {
-            Home => "Home",
-            About => "About",
-        }
-    }
+/// PageSelection for displaying current page, display name, href
+const PAGE_SELECTIONS: &[(Option<PageSelection>, &str, &str)] = &[
+    (Some(PageSelection::Home), "Home", "/home"),
+    (Some(PageSelection::About), "About", "/about"),
+    (None, "Create listing", "/listing/new")
+];
 
-    fn href(&self) -> &str {
-        use PageSelection::*;
-        match self {
-            Home => "/home",
-            About => "/about",
-        }
-    }
-}
-
-const PAGE_SELECTIONS: &[PageSelection] = &[PageSelection::Home, PageSelection::About];
-
-fn render_page_selector(current_selection: PageSelection) -> Markup {
+fn render_page_selector(current_selection: Option<PageSelection>) -> Markup {
     html! {
         nav #nav-selector hx-swap-oob="true" hx-replace-url="true" hx-target="#page" hx-swap="outerHTML" {
-            @for selection in PAGE_SELECTIONS {
-                a href=(selection.href()) hx-get=(selection.href()) .page-selector .current-page-selector[selection == &current_selection] {
-                    (selection.render())
+            @for (selection, display_name, href) in PAGE_SELECTIONS {
+                a href=(href) hx-get=(href) .page-selector
+                    .current-page-selector[selection.is_some_and(|s| Some(s) == current_selection)] {
+                    (display_name)
                 }
             }
         }

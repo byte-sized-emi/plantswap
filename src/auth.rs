@@ -4,7 +4,7 @@ use axum::{async_trait, extract::Query, http::StatusCode, response::{IntoRespons
 use axum_login::{tower_sessions::Session, AuthUser, AuthnBackend, UserId};
 use diesel::PgConnection;
 use jsonwebtoken::{jwk::JwkSet, DecodingKey, Validation};
-use oauth2::{basic::{BasicClient, BasicRequestTokenError}, reqwest::{async_http_client, AsyncHttpClientError}, AuthUrl, AuthorizationCode, ClientId, CsrfToken, PkceCodeChallenge, RedirectUrl, TokenResponse, TokenUrl};
+use oauth2::{basic::{BasicClient, BasicRequestTokenError}, reqwest::{async_http_client, AsyncHttpClientError}, AuthUrl, AuthorizationCode, ClientId, CsrfToken, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, TokenResponse, TokenUrl};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use tracing::debug;
@@ -19,6 +19,7 @@ pub fn router() -> Router<AppState> {
 }
 
 const CSRF_STATE_KEY: &str = "oauth.csrf-state";
+const PKCE_VERIFIER_KEY: &str = "oauth.pkce-verifier";
 
 /// TODO: Store CSRF token and use PKCE challenge
 async fn login_route(auth_session: AuthSession, session: Session) -> impl IntoResponse {
@@ -31,10 +32,13 @@ async fn login_route(auth_session: AuthSession, session: Session) -> impl IntoRe
         // .add_scope(Scope::new("read".to_string()))
         // .add_scope(Scope::new("write".to_string()))
         // Set the PKCE code challenge.
-        // .set_pkce_challenge(pkce_challenge)
+        .set_pkce_challenge(pkce_challenge)
         .url();
 
     session.insert(CSRF_STATE_KEY, csrf_token.secret())
+        .await.unwrap();
+
+    session.insert(PKCE_VERIFIER_KEY, pkce_verifier)
         .await.unwrap();
 
     Redirect::to(auth_url.as_str())
@@ -58,13 +62,17 @@ async fn redirect_route(
     let Ok(Some(old_state)) = session.get(CSRF_STATE_KEY).await else {
         return StatusCode::BAD_REQUEST.into_response();
     };
+    let Ok(Some(pkce_verifier)) = session.get(PKCE_VERIFIER_KEY).await else {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    };
 
     let AuthzResp { state: new_state, code } = query_params;
 
     let credentials = Credentials {
         code,
         old_state,
-        new_state
+        new_state,
+        pkce_verifier
     };
 
     let user = match auth_session.authenticate(credentials).await {
@@ -110,11 +118,12 @@ pub async fn initialize_auth(config: &AppConfig, db: Arc<Mutex<PgConnection>>) -
     AuthState { jwk_set, oauth2_client, db }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct Credentials {
     pub code: String,
     pub old_state: CsrfToken,
     pub new_state: CsrfToken,
+    pub pkce_verifier: PkceCodeVerifier
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -158,23 +167,9 @@ impl AuthnBackend for AuthState {
         let token_res = self
             .oauth2_client
             .exchange_code(AuthorizationCode::new(creds.code))
+            .set_pkce_verifier(creds.pkce_verifier)
             .request_async(async_http_client)
             .await?;
-
-        // Use access token to request user info.
-        // let user_info = reqwest::Client::new()
-        //     .get("https://api.github.com/user")
-        //     .header(USER_AGENT.as_str(), "axum-login") // See: https://docs.github.com/en/rest/overview/resources-in-the-rest-api?apiVersion=2022-11-28#user-agent-required
-        //     .header(
-        //         AUTHORIZATION.as_str(),
-        //         format!("Bearer {}", token_res.access_token().secret()),
-        //     )
-        //     .send()
-        //     .await
-        //     .map_err(Self::Error::Reqwest)?
-        //     .json::<UserInfo>()
-        //     .await
-        //     .map_err(Self::Error::Reqwest)?;
 
         let bearer = token_res.access_token().secret();
 
@@ -229,15 +224,6 @@ impl AuthnBackend for AuthState {
         } else {
             Ok(None)
         }
-
-            // .returning(UserSession::as_returning())
-            // .get_result();
-
-        // Ok(sqlx::query_as("select * from users where id = ?")
-        //     .bind(user_id)
-        //     .fetch_optional(&self.db)
-        //     .await
-        //     .map_err(Self::Error::Sqlx)?)
     }
 }
 
