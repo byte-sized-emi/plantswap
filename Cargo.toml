@@ -27,3 +27,5 @@ uuid = { version = "1.10.0", features = ["serde", "v4", "v7"] }
 tower-sessions-moka-store = "0.13.0"
 tower-sessions-redis-store = "0.13.0"
 axum-login = "0.15.3"
+time = "0.3.36"
+bytes = "1.7.1"

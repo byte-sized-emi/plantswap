@@ -1,16 +1,13 @@
-use std::sync::Arc;
 
 use axum::{async_trait, extract::Query, http::StatusCode, response::{IntoResponse, Redirect}, routing::get, Router};
 use axum_login::{tower_sessions::Session, AuthUser, AuthnBackend, UserId};
-use diesel::PgConnection;
 use jsonwebtoken::{jwk::JwkSet, DecodingKey, Validation};
 use oauth2::{basic::{BasicClient, BasicRequestTokenError}, reqwest::{async_http_client, AsyncHttpClientError}, AuthUrl, AuthorizationCode, ClientId, CsrfToken, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, TokenResponse, TokenUrl};
 use serde::{Deserialize, Serialize};
-use tokio::sync::Mutex;
 use tracing::debug;
 use uuid::Uuid;
 
-use crate::{config::AppConfig, models::UserSession, AppState};
+use crate::{backend, config::AppConfig, models::UserSession, AppState};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -21,7 +18,6 @@ pub fn router() -> Router<AppState> {
 const CSRF_STATE_KEY: &str = "oauth.csrf-state";
 const PKCE_VERIFIER_KEY: &str = "oauth.pkce-verifier";
 
-/// TODO: Store CSRF token and use PKCE challenge
 async fn login_route(auth_session: AuthSession, session: Session) -> impl IntoResponse {
     let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
 
@@ -31,7 +27,6 @@ async fn login_route(auth_session: AuthSession, session: Session) -> impl IntoRe
         // Set the desired scopes.
         // .add_scope(Scope::new("read".to_string()))
         // .add_scope(Scope::new("write".to_string()))
-        // Set the PKCE code challenge.
         .set_pkce_challenge(pkce_challenge)
         .url();
 
@@ -42,7 +37,6 @@ async fn login_route(auth_session: AuthSession, session: Session) -> impl IntoRe
         .await.unwrap();
 
     Redirect::to(auth_url.as_str())
-
 }
 
 #[derive(Debug, Deserialize)]
@@ -52,8 +46,6 @@ struct AuthzResp {
 }
 
 /// The user gets redirected back here from the auth provider after a successful login.
-/// TODO: Verify that csrf_token matches the csrf_token from the login route
-/// and verify the pkce challenge
 async fn redirect_route(
     mut auth_session: AuthSession,
     session: Session,
@@ -78,7 +70,7 @@ async fn redirect_route(
     let user = match auth_session.authenticate(credentials).await {
         Ok(Some(user)) => user,
         Ok(None) => {
-            return (StatusCode::UNAUTHORIZED, "Invalid CSRF state").into_response()
+            return (StatusCode::UNAUTHORIZED, "Invalid token").into_response()
         }
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
@@ -94,10 +86,10 @@ async fn redirect_route(
 pub struct AuthState {
     pub jwk_set: JwkSet,
     pub oauth2_client: BasicClient,
-    pub db: Arc<Mutex<PgConnection>>,
+    pub backend: backend::Backend,
 }
 
-pub async fn initialize_auth(config: &AppConfig, db: Arc<Mutex<PgConnection>>) -> AuthState {
+pub async fn initialize_auth(config: &AppConfig, backend: backend::Backend) -> AuthState {
     let server_url = config.auth_server_url();
 
     let oauth2_client = BasicClient::new(
@@ -115,7 +107,7 @@ pub async fn initialize_auth(config: &AppConfig, db: Arc<Mutex<PgConnection>>) -
         .json().await
         .unwrap();
 
-    AuthState { jwk_set, oauth2_client, db }
+    AuthState { jwk_set, oauth2_client, backend }
 }
 
 #[derive(Debug, Deserialize)]
@@ -128,23 +120,13 @@ pub struct Credentials {
 
 #[derive(Debug, thiserror::Error)]
 pub enum BackendError {
-    // #[error(transparent)]
-    // Sqlx(sqlx::Error),
-    #[error(transparent)]
-    JsonWebToken(#[from] jsonwebtoken::errors::Error),
-
-    #[error("Missing 'kid' claim")]
-    MissingKidClaim,
-    #[error("Invalid key id {0}")]
-    InvalidKid(String),
-
-    #[error(transparent)]
+    #[error("Error with HTTP request: {0}")]
     Reqwest(#[from] reqwest::Error),
 
-    #[error(transparent)]
+    #[error("OAuth2 error: {0}")]
     OAuth2(#[from] BasicRequestTokenError<AsyncHttpClientError>),
 
-    #[error(transparent)]
+    #[error("DB error: {0}")]
     Diesel(#[from] diesel::result::Error),
 }
 
@@ -173,7 +155,13 @@ impl AuthnBackend for AuthState {
 
         let bearer = token_res.access_token().secret();
 
-        let user_claims = check_bearer(&self.jwk_set, bearer)?;
+        let user_claims = match check_bearer(&self.jwk_set, bearer) {
+            Ok(user_claims) => user_claims,
+            Err(err) => {
+                debug!("Error while checking JWT bearer: {err}");
+                return Ok(None);
+            }
+        };
 
         let db_user_session = UserSession {
             id: user_claims.user_id,
@@ -181,7 +169,7 @@ impl AuthnBackend for AuthState {
         };
 
         {
-            let mut db_con = self.db.lock().await;
+            let mut db_con = self.backend.db.lock().await;
             use diesel::prelude::*;
             use crate::schema::user_sessions;
 
@@ -205,7 +193,7 @@ impl AuthnBackend for AuthState {
         use diesel::prelude::*;
         use crate::schema::user_sessions;
 
-        let mut db_con = self.db.lock().await;
+        let mut db_con = self.backend.db.lock().await;
 
         let user_session = user_sessions::table.find(user_id)
             .select(UserSession::as_select())
@@ -214,13 +202,17 @@ impl AuthnBackend for AuthState {
         if let Some(user_session) = user_session {
             let UserSession { id, access_token } = user_session;
 
-            let claims = check_bearer(&self.jwk_set, &access_token)?;
-
-            Ok(Some(User {
-                id,
-                claims,
-                access_token
-            }))
+            match check_bearer(&self.jwk_set, &access_token) {
+                Ok(claims) => Ok(Some(User {
+                    id,
+                    claims,
+                    access_token
+                })),
+                Err(err) => {
+                    debug!("Error while checking JWT bearer: {err}");
+                    return Ok(None);
+                }
+            }
         } else {
             Ok(None)
         }
@@ -270,16 +262,16 @@ impl AuthUser for User {
     }
 }
 
-pub fn check_bearer(jwk_set: &JwkSet, bearer_token: &str) -> Result<UserClaims, BackendError> {
+pub fn check_bearer(jwk_set: &JwkSet, bearer_token: &str) -> Result<UserClaims, jsonwebtoken::errors::Error> {
     let unverified_header =
         jsonwebtoken::decode_header(bearer_token)?;
 
     let kid = unverified_header.kid
-        .ok_or(BackendError::MissingKidClaim)?;
+        .expect("Missing 'kid' claim");
 
     let jwk = jwk_set
         .find(&kid)
-        .ok_or(BackendError::InvalidKid(kid))?;
+        .expect("Invalid key id");
 
     let decoding_key = DecodingKey::from_jwk(jwk)?;
 

@@ -1,121 +1,114 @@
 use std::sync::Arc;
 
-use axum::{extract::{Multipart, Path, State}, http::StatusCode, routing::*, Json};
+use aws_config::{meta::region::RegionProviderChain, BehaviorVersion};
+use aws_sdk_s3::config::Credentials;
+use bytes::Bytes;
 use diesel::prelude::*;
-use serde::Serialize;
 use tokio::sync::Mutex;
-use tracing::info;
+use tracing::debug;
 use uuid::Uuid;
 
-use crate::{auth::{AuthSession, UserClaims}, models::*, AppState};
+use crate::{config::AppConfig, models::*};
 
-/// TODO: Update listings
-pub fn router() -> axum::Router<AppState> {
-    axum::Router::new()
-        .route("/listing", get(get_all_listings).post(create_listing))
-        .route("/listing/:id", get(get_listing))
-        .route("/image", post(upload_image))
-        .route("/protected", get(protected_route))
+#[derive(Clone)]
+pub struct Backend {
+    pub db: Arc<Mutex<PgConnection>>,
+    pub s3_client: aws_sdk_s3::Client,
 }
 
-async fn protected_route(auth_session: AuthSession) -> Result<Json<UserClaims>, StatusCode> {
-    let user = auth_session.user.ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
+impl Backend {
+    pub async fn new(config:  &AppConfig) -> Self {
+        let con = PgConnection::establish(config.database_url())
+                .unwrap_or_else(|_| panic!("Error connecting to {}", config.database_url()));
 
-    Ok(Json(user.claims))
-}
+        let db = Arc::new(Mutex::new(con));
 
-async fn get_all_listings(State(db): State<Arc<Mutex<PgConnection>>>) -> Result<Json<Vec<Listing>>, StatusCode> {
-    use crate::schema::listings::dsl::*;
+        let region_provider = RegionProviderChain::default_provider().or_else("us-east-1");
+        let credentials_provider = Credentials::new(config.s3_access_key(), config.s3_secret_key(), None, None, "Environment");
+        let s3_config = aws_config::defaults(BehaviorVersion::latest())
+            .region(region_provider)
+            .endpoint_url(config.s3_endpoint())
+            .credentials_provider(credentials_provider)
+            .load().await;
 
-    let mut con = db.lock().await;
+        let s3_config: aws_sdk_s3::Config = (&s3_config).into();
+        let s3_config = s3_config.to_builder()
+            .force_path_style(true)
+            .build();
 
-    listings
-        .limit(100)
-        .select(Listing::as_select())
-        .load(&mut *con)
-        .map(Json)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
-}
+        let s3_client = aws_sdk_s3::Client::from_conf(s3_config);
 
-/// TODO: Get author from auth
-async fn create_listing(State(db): State<Arc<Mutex<PgConnection>>>, Json(body): Json<InsertListing>) -> Result<Json<Listing>, StatusCode> {
-    use crate::schema::listings::dsl::*;
-
-    let mut con = db.lock().await;
-
-    body.insert_into(listings)
-        .returning(Listing::as_select())
-        .get_result(&mut *con)
-        .map(Json)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
-}
-
-async fn get_listing(State(db): State<Arc<Mutex<PgConnection>>>, Path(listing_id): Path<i32>) -> Result<Json<Listing>, StatusCode> {
-    use crate::schema::listings::dsl::*;
-
-    let mut con = db.lock().await;
-
-    listings.find(listing_id)
-        .select(Listing::as_select())
-        .get_result(&mut *con).optional()
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .map(Json)
-        .ok_or(StatusCode::BAD_REQUEST)
-}
-
-#[derive(Serialize)]
-struct UploadImageResponse {
-    file_key: Uuid,
-}
-
-async fn upload_image(State(state): State<AppState>, mut multipart: Multipart) -> Result<Json<UploadImageResponse>, (StatusCode, String)> {
-    let client = state.s3_client;
-    let bucket = state.config.s3_images_bucket();
-
-    let file_key = Uuid::now_v7();
-
-    let image;
-
-    if let Some(field) = multipart.next_field().await
-        .map_err(|err|
-            (StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Error parsing multipart form data: {err:?}")))?
-    {
-        if field.content_type() != Some("image/jpeg") {
-            return Err((StatusCode::BAD_REQUEST, "Invalid content type on multipart field, should be 'image/jpeg'".to_string()));
-        }
-        image = field.bytes().await
-            .map_err(|err|
-                (StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Error parsing field in multipart form: {err:?}")))?;
-    } else {
-        return Err((StatusCode::BAD_REQUEST, "Zero fields in multipart request".to_string()));
+        Backend { db, s3_client }
     }
 
-    info!(bucket, key=?file_key, input_len=image.len(), "Uploading image to s3");
+    pub async fn get_all_listings(&self) -> BackendResult<Vec<Listing>> {
+        use crate::schema::listings::dsl::*;
 
-    client.put_object()
-        .bucket(bucket)
-        .key(file_key)
-        .body(image.into())
-        .content_type("image/jpeg")
-        .send()
-        .await
-        .map_err(|err|
-            (StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Couldn't upload file to S3 server: {err:?}"))
-            )?;
+        let mut con = self.db.lock().await;
 
-    let new_image = InsertImage {
-        file_key,
-        uploaded_by_user: None // TODO: Put user here
-    };
+        listings
+            .limit(100)
+            .select(Listing::as_select())
+            .load(&mut *con)
+            .map_err(Into::into)
+    }
 
-    let mut con = state.db.lock().await;
+    pub async fn create_listing(&self, listing: InsertListing) -> BackendResult<Listing> {
+        use crate::schema::listings::dsl::*;
 
-    new_image.insert_into(crate::schema::images::table)
-        .execute(&mut *con)
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string()))?;
+        let mut con = self.db.lock().await;
 
-    Ok(Json(UploadImageResponse { file_key }))
+        listing.insert_into(listings)
+            .returning(Listing::as_select())
+            .get_result(&mut *con)
+            .map_err(Into::into)
+    }
+
+    pub async fn get_listing(&self, listing_id: i32) -> BackendResult<Option<Listing>> {
+        use crate::schema::listings::dsl::*;
+
+        let mut con = self.db.lock().await;
+
+        let listing = listings.find(listing_id)
+            .select(Listing::as_select())
+            .get_result(&mut *con).optional()?;
+
+        Ok(listing)
+    }
+
+    pub async fn upload_image(&self, user: Uuid, bucket: &str, file_key: Uuid, image: Bytes) -> BackendResult<()> {
+        let client = &self.s3_client;
+
+        debug!(bucket, key=?file_key, input_len=image.len(), "Uploading image to s3");
+
+        client.put_object()
+            .bucket(bucket)
+            .key(file_key)
+            .body(image.into())
+            .content_type("image/jpeg")
+            .send()
+            .await.map_err(Into::<aws_sdk_s3::Error>::into)?;
+
+        let new_image = InsertImage {
+            file_key,
+            uploaded_by_user: Some(user)
+        };
+
+        let mut con = self.db.lock().await;
+
+        new_image.insert_into(crate::schema::images::table)
+            .execute(&mut *con)?;
+
+        Ok(())
+    }
 }
+
+#[derive(Debug, thiserror::Error)]
+pub enum BackendError {
+    #[error("DB error: {0}")]
+    Db(#[from] diesel::result::Error),
+    #[error("S3 error: {0}")]
+    S3(#[from] aws_sdk_s3::Error)
+}
+
+pub type BackendResult<T> = Result<T, BackendError>;
