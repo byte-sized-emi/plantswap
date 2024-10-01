@@ -1,0 +1,7 @@
+{% import "components.html" as components %}
+
+<div id="listing" class="text-white {{ components::CARD }}">
+    <h1 class="text-2xl">{{ listing.title }}</h1>
+    <p>{{ listing.description }}</p>
+    {% call components::listing_insertion_date(listing.insertion_date) %}
+</div>

@@ -1,0 +1,27 @@
+{% import "components.html" as components %}
+
+<form id="new-listing" class="{{ components::CARD }}"
+    hx-post="/listing/new" hx-target="#page" hx-swap="outerHTML"
+    action="/listing/new"
+>
+    <h5 class="mb-2 text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
+        Insert new listing
+    </h5>
+
+    {% call components::text_input("title", "Title", "Your title here", true) %}
+
+    {% call components::textarea_input("description", "Description", "Describe your plant", true) %}
+
+    <div class="py-4">
+        {% call components::radio("listing_type",
+            [("Selling", true), ("Buying", false)]
+        ) %}
+    </div>
+
+    {% call components::checkbox("tradeable", "Trade possible") %}
+
+    <button type="submit" form="new-listing" class="self-end {{ components::button::GREEN }}">
+        Create listing
+    </button>
+
+</form>

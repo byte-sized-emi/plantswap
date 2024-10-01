@@ -1,0 +1,74 @@
+{% macro text_input(id, label, placeholder, required) %}
+    <div>
+        <label
+            class="block mb-2 text-sm font-medium text-gray-900 dark:text-white"
+            for={{ id }}
+        >{{ label }}</label>
+        <input id="{{ id }}" type="text"
+            class="bg-gray-50 border border-gray-300 text-gray-900
+                text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500
+                block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400
+                dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
+            placeholder="{{ placeholder }}" name="{{ id }}"
+            {% if required %} required {% endif %}
+        >
+    </div>
+{% endmacro %}
+
+{% macro textarea_input(id, label, placeholder, required) %}
+    <label for="{{ id }}" class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">
+        {{ label }}
+    </label>
+    <textarea id="{{ id }}" rows="4" placeholder="{{ placeholder }}" name="{{ id }}"
+        {% if required %} required {% endif %}
+        class="
+            block p-2.5 w-full text-sm text-gray-900 bg-gray-50 rounded-lg border border-gray-300
+            focus:ring-blue-500 focus:border-blue-500
+            dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white
+            dark:focus:ring-blue-500 dark:focus:border-blue-500
+        "
+    ></textarea>
+{% endmacro %}
+
+{% macro radio(id, elements) %}
+    {% for (index, element) in elements.into_iter().enumerate() %}
+        {% let name = element.0 %}
+        {% let default = element.1 %}
+        {% let sub_id = format!("{id}-{index}") %}
+        <div class="flex items-center mb-2">
+            <input id="{{ sub_id }}" type="radio" value="{{ name }}" name="{{ id }}"
+                {% if default %} checked {% endif %}
+                class="
+                    w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 focus:ring-blue-500 dark:focus:ring-blue-600
+                    dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600
+                "
+            >
+            <label for="{{ sub_id }}" class="ms-2 text-sm font-medium text-gray-900 dark:text-gray-300"
+            >
+                {{ name }}
+            </label>
+        </div>
+    {% endfor %}
+{% endmacro %}
+
+{% macro checkbox(id, name) %}
+<div class="flex items-center mb-4">
+    <input id="{{ id }}" type="checkbox" name="{{ id }}" value="true"
+        class="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300
+            rounded focus:ring-blue-500
+            dark:focus:ring-blue-600 dark:ring-offset-gray-800
+            focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+    >
+    <label for="{{ id }}" class="ms-2 text-sm font-medium text-gray-900 dark:text-gray-300">
+        {{ name }}
+    </label>
+</div>
+{% endmacro %}
+
+{% macro listing_insertion_date(insertion_date) %}
+    {% let (human_duration, insertion_date) = self::generate_insertion_date(insertion_date) %}
+    <p class="tooltip text-slate-400 text-right">
+        {{ human_duration }}
+        <span class="tooltiptext">{{ insertion_date }}</span>
+    </p>
+{% endmacro %}

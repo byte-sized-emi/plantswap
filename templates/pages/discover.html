@@ -1,0 +1,19 @@
+{% import "components.html" as components %}
+
+<div class="w-full flex flex-col items-center gap-2">
+    {% for listing in listings %}
+        {% set href_url = "/listing/{}"|format(listing.id) %}
+        <a href="{{ href_url }}"
+            hx-get="{{ href_url }}" hx-replace-url="true" hx-target="#page" hx-swap="outerHTML"
+            class="flex flex-col gap-2 p-6 w-3/4 {{ components::CARD }}"
+        >
+            <h1 class="text-2xl">{{ listing.title }}</h1>
+            <p class="p-2 border border-gray-300 rounded-lg">{{ listing.description }}</p>
+            <p>
+                Tradeable:
+                <b>{% if listing.tradeable %} Yes {% else %} No {% endif %}</b>
+            </p>
+            <div class="self-end">{% call components::listing_insertion_date(listing.insertion_date) %}</div>
+        </a>
+    {% endfor %}
+</div>

@@ -1,6 +1,11 @@
 
 [Database.md](Database.md)
 
+## TODO:
+ - [ ] Make templates borrow data instead of own it
+ - [ ] Logout button
+ - [ ] 404 page
+
 ## Plant identification sites
 
 ### Offline

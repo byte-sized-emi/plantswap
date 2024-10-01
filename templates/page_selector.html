@@ -1,0 +1,15 @@
+<nav id="nav-selector"
+    hx-swap-oob="true" hx-replace-url="true" hx-target="#page" hx-swap="outerHTML"
+>
+    {% for (selection, display_name, href) in super::PAGE_SELECTIONS %}
+        <a href={{ href }} hx-get={{ href }}
+            {% if self::is_current_selection(selection, current_selection) %}
+                class="page-selector current-page-selector"
+            {% else %}
+                class="page-selector"
+            {% endif %}
+        >
+            {{ display_name }}
+        </a>
+    {% endfor %}
+</nav>

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Plant swap</title>
+        <meta name="title" content="Plant swap">
+        <meta charset="UTF-8">
+        <meta name="description" content="A place for people to buy/sell/trade plants">
+        <meta name="author" content="Emilia Jaser">
+        <link rel="stylesheet" type="text/css" href="/assets/styles.css">
+        <script src="/assets/script/htmx-2.0.2.js"></script>
+        <script src="/assets/script/tailwind-3.4.5.js"></script>
+    </head>
+    <body>
+        <div id="main-wrapper">
+            <header>
+                <div id="header-left-side">
+                    <div id="header-site-name">Plant swap</div>
+                </div>
+                {{ page_selector|safe }}
+                {{ login_button|safe }}
+            </header>
+            <article id="page">{{ page|safe }}</article>
+            <footer>Footer</footer>
+        </div>
+    </body>
+</html>
