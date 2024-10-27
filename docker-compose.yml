@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgis/postgis:16-3.5-alpine
     ports:
       - 5432:5432
     volumes:
@@ -35,6 +35,9 @@ services:
       KC_DB_URL: jdbc:postgresql://postgres/keycloak
       KC_DB_USERNAME: postgres
       KC_DB_PASSWORD: postgres
+      KEYCLOAK_IMPORT: /tmp/plantswap-realm-export.json
+    volumes:
+      - ./realm-export.json:/tmp/plantswap-realm-export.json
     ports:
       - 8080:8080
     depends_on:

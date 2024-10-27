@@ -5,6 +5,8 @@
  - [ ] Make templates borrow data instead of own it
  - [ ] Logout button
  - [ ] 404 page
+ - [ ] create account functionality
+ - [ ] Display errors in create listing page directly in form (+ don't reset form data when it does)
 
 ## Plant identification sites
 

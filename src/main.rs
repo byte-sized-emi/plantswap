@@ -9,7 +9,7 @@ use tower_http::services::ServeDir;
 use tokio::net::TcpListener;
 use tower_sessions_moka_store::MokaStore;
 use tower_sessions_redis_store::{fred::{prelude::*, types::RedisConfig}, RedisStore};
-use tracing::info;
+use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
 mod frontend;
@@ -54,6 +54,9 @@ async fn main() {
     let session_layer = SessionManagerLayer::new(caching_store)
         .with_expiry(Expiry::OnInactivity(time::Duration::days(100)));
 
+    #[cfg(debug_assertions)]
+    let session_layer = session_layer.with_secure(false);
+
     let auth_layer = AuthManagerLayerBuilder::new(auth_state, session_layer).build();
 
     let global_state = AppState { backend, config: Arc::new(config) };
@@ -68,10 +71,13 @@ async fn main() {
         .layer(auth_layer)
         .nest_service("/assets", ServeDir::new("assets"));
 
-    let socket_address = "0.0.0.0:3000";
+    let socket_address = "localhost:3000";
     info!("Listening on http://{socket_address}/");
 
     let listener = TcpListener::bind(socket_address).await.unwrap();
+
+    #[cfg(debug_assertions)]
+    warn!("Running in debug mode (non-secure auth cookies, e.g.)");
 
     axum::serve(listener, app).await.unwrap();
 }

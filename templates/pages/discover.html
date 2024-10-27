@@ -1,6 +1,6 @@
 {% import "components.html" as components %}
 
-<div class="w-full flex flex-col items-center gap-2">
+<div class="w-3/4 flex flex-col items-center gap-2">
     {% for listing in listings %}
         {% set href_url = "/listing/{}"|format(listing.id) %}
         <a href="{{ href_url }}"

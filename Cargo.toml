@@ -22,6 +22,7 @@ tower-http = { version = "0.5.2", features = ["fs"] }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 uuid = { version = "1.10.0", features = ["serde", "v4", "v7"] }
+itertools = "0.13.0"
 
 tower-sessions-moka-store = "0.13.0"
 tower-sessions-redis-store = "0.13.0"
@@ -30,3 +31,5 @@ time = "0.3.36"
 bytes = "1.7.1"
 askama = { version = "0.12.1", features = ["with-axum"] }
 askama_axum = "0.4.0"
+postgis_diesel = { version = "2.4.1", features = ["serde"] }
+axum_typed_multipart = "0.13.1"

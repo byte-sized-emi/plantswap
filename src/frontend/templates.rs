@@ -1,5 +1,6 @@
 use askama::DynTemplate;
 use askama_axum::Template;
+use chrono::{Local, NaiveDateTime};
 
 use crate::auth::AuthSession;
 
@@ -38,7 +39,8 @@ pub struct LoginButton {
 pub mod pages {
     use askama_axum::Template;
 
-    pub use crate::frontend::*;
+    use crate::frontend::components;
+    use super::generate_insertion_date;
     pub use crate::models::Listing;
 
     #[derive(Template)]
@@ -63,7 +65,19 @@ pub mod pages {
 
     #[derive(Template)]
     #[template(path = "pages/create_listing.html")]
-    pub struct CreateListing;
+    pub struct CreateListing<'a> {
+        pub error: Option<&'a str>,
+    }
+
+    impl<'a> CreateListing<'a> {
+        pub fn new() -> Self {
+            Self { error: None }
+        }
+
+        pub fn with_error(error: &'a str) -> Self {
+            Self { error: Some(error) }
+        }
+    }
 
     #[derive(Template)]
     #[template(source = "<span class=\"center-page\">{{ error }}</span>", ext = "txt")]
@@ -78,6 +92,32 @@ pub mod pages {
     }
 }
 
+fn generate_insertion_date(insertion_date: &NaiveDateTime) -> (String, String) {
+    let now = Local::now().naive_local();
+    let duration = -insertion_date.signed_duration_since(now);
+
+    let insertion_date = insertion_date.format("%H:%M %Y.%m.%d");
+
+    let human_duration = match duration {
+        dur if dur.num_days() > 365 => {
+            format!("{} years ago", dur.num_days() / 365)
+        }
+        dur if dur.num_days() > 1 => {
+            format!("{} days ago", dur.num_days())
+        }
+        dur if dur.num_hours() > 1 => {
+            format!("{} hours ago", dur.num_hours())
+        }
+        dur if dur.num_minutes() > 15 => {
+            format!("{} minutes ago", dur.num_minutes())
+        }
+        _ => {
+            "Just now".to_string()
+        }
+    };
+
+    (human_duration, insertion_date.to_string())
+}
 
 fn is_current_selection(selection: &Option<PageSelection>, current_selection: &Option<PageSelection>) -> bool {
     selection.is_some_and(|s| &Some(s) == current_selection)

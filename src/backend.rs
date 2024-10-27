@@ -14,6 +14,7 @@ use crate::{config::AppConfig, models::*};
 pub struct Backend {
     pub db: Arc<Mutex<PgConnection>>,
     pub s3_client: aws_sdk_s3::Client,
+    pub images_bucket: String,
 }
 
 impl Backend {
@@ -38,7 +39,9 @@ impl Backend {
 
         let s3_client = aws_sdk_s3::Client::from_conf(s3_config);
 
-        Backend { db, s3_client }
+        let images_bucket = config.s3_images_bucket().to_owned();
+
+        Backend { db, s3_client, images_bucket }
     }
 
     pub async fn get_all_listings(&self) -> BackendResult<Vec<Listing>> {
@@ -54,17 +57,26 @@ impl Backend {
     }
 
     pub async fn create_listing(&self, listing: InsertListing) -> BackendResult<Listing> {
-        use crate::schema::listings::dsl::*;
-
+        use crate::schema::{users, listings};
         let mut con = self.db.lock().await;
 
-        listing.insert_into(listings)
+        let user_exists: i64 = users::table.find(listing.author)
+            .filter(users::location.is_not_null())
+            .count()
+            .get_result(&mut *con).optional()?
+            .unwrap_or_default();
+
+        if user_exists != 1 {
+            return Err(BackendError::ListingHasNoLocation);
+        }
+
+        listing.insert_into(listings::table)
             .returning(Listing::as_select())
             .get_result(&mut *con)
             .map_err(Into::into)
     }
 
-    pub async fn get_listing(&self, listing_id: i32) -> BackendResult<Option<Listing>> {
+    pub async fn get_listing(&self, listing_id: Uuid) -> BackendResult<Option<Listing>> {
         use crate::schema::listings::dsl::*;
 
         let mut con = self.db.lock().await;
@@ -76,13 +88,15 @@ impl Backend {
         Ok(listing)
     }
 
-    pub async fn upload_image(&self, user: Uuid, bucket: &str, file_key: Uuid, image: Bytes) -> BackendResult<()> {
+    pub async fn upload_image(&self, user: Uuid, image: Bytes) -> BackendResult<Uuid> {
+        let file_key = Uuid::now_v7();
+
         let client = &self.s3_client;
 
-        debug!(bucket, key=?file_key, input_len=image.len(), "Uploading image to s3");
+        debug!(self.images_bucket, key=?file_key, input_len=image.len(), "Uploading image to s3");
 
         client.put_object()
-            .bucket(bucket)
+            .bucket(&self.images_bucket)
             .key(file_key)
             .body(image.into())
             .content_type("image/jpeg")
@@ -99,12 +113,14 @@ impl Backend {
         new_image.insert_into(crate::schema::images::table)
             .execute(&mut *con)?;
 
-        Ok(())
+        Ok(file_key)
     }
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum BackendError {
+    #[error("Listing's owner has no location")]
+    ListingHasNoLocation,
     #[error("DB error: {0}")]
     Db(#[from] diesel::result::Error),
     #[error("S3 error: {0}")]

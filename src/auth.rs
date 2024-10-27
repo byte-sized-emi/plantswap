@@ -1,10 +1,10 @@
-
 use axum::{async_trait, extract::Query, http::StatusCode, response::{IntoResponse, Redirect}, routing::get, Router};
+use axum_htmx::HxRequest;
 use axum_login::{tower_sessions::Session, AuthUser, AuthnBackend, UserId};
 use jsonwebtoken::{jwk::JwkSet, DecodingKey, Validation};
 use oauth2::{basic::{BasicClient, BasicRequestTokenError}, reqwest::{async_http_client, AsyncHttpClientError}, AuthUrl, AuthorizationCode, ClientId, CsrfToken, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, TokenResponse, TokenUrl};
 use serde::{Deserialize, Serialize};
-use tracing::debug;
+use tracing::{debug, error, info};
 use uuid::Uuid;
 
 use crate::{backend, config::AppConfig, models::UserSession, AppState};
@@ -17,8 +17,14 @@ pub fn router() -> Router<AppState> {
 
 const CSRF_STATE_KEY: &str = "oauth.csrf-state";
 const PKCE_VERIFIER_KEY: &str = "oauth.pkce-verifier";
+const NEXT_URL_KEY: &str = "oauth.next_url";
 
-async fn login_route(auth_session: AuthSession, session: Session) -> impl IntoResponse {
+#[derive(Deserialize)]
+struct NextUrl {
+    pub next: Option<String>
+}
+
+async fn login_route(auth_session: AuthSession, session: Session, HxRequest(is_htmx): HxRequest, Query(next_url): Query<NextUrl>) -> impl IntoResponse {
     let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
 
     // Generate the full authorization URL.
@@ -36,7 +42,22 @@ async fn login_route(auth_session: AuthSession, session: Session) -> impl IntoRe
     session.insert(PKCE_VERIFIER_KEY, pkce_verifier)
         .await.unwrap();
 
-    Redirect::to(auth_url.as_str())
+    if let Some(next) = next_url.next {
+        session.insert(NEXT_URL_KEY,  next)
+            .await.unwrap();
+    }
+
+    info!("Sending user to auth url");
+
+    if is_htmx {
+        (
+            StatusCode::OK,
+            [("Hx-Redirect", auth_url.to_string())]
+        )
+        .into_response()
+    } else {
+        Redirect::to(auth_url.as_str()).into_response()
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -51,12 +72,29 @@ async fn redirect_route(
     session: Session,
     Query(query_params): Query<AuthzResp>
 ) -> impl IntoResponse {
-    let Ok(Some(old_state)) = session.get(CSRF_STATE_KEY).await else {
+    if let Some(user) = auth_session.user {
+        debug!("User {:?} was already logged in but accessed redirect route", user.id);
+        return Redirect::to("/").into_response();
+    }
+
+    let old_state = match session.remove(CSRF_STATE_KEY).await {
+        Err(err) => {
+            error!(?err, id = ?session.id(), "Couldn't get CSRF_STATE_KEY from session");
+            return StatusCode::BAD_REQUEST.into_response();
+        }
+        Ok(None) => {
+            error!(id = ?session.id(), "No CSRF_STATE_KEY in session");
+            return StatusCode::BAD_REQUEST.into_response();
+        }
+        Ok(Some(state)) => state
+    };
+
+    let Ok(Some(pkce_verifier)) = session.remove(PKCE_VERIFIER_KEY).await else {
+        error!(id = ?session.id(), "Couldn't get PKCE_VERIFIER_KEY from session");
         return StatusCode::BAD_REQUEST.into_response();
     };
-    let Ok(Some(pkce_verifier)) = session.get(PKCE_VERIFIER_KEY).await else {
-        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-    };
+
+    let next_url: Option<String> = session.remove(NEXT_URL_KEY).await.ok().flatten();
 
     let AuthzResp { state: new_state, code } = query_params;
 
@@ -79,7 +117,11 @@ async fn redirect_route(
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
 
-    Redirect::to("/").into_response()
+    if let Some(next_url) = next_url {
+        Redirect::to(&next_url).into_response()
+    } else {
+        Redirect::to("/").into_response()
+    }
 }
 
 #[derive(Clone)]

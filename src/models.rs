@@ -1,9 +1,11 @@
 use std::io::Write;
+use axum_typed_multipart::TryFromField;
 use diesel::{deserialize::{self, FromSql, FromSqlRow}, expression::AsExpression, pg::{Pg, PgValue}, prelude::*, serialize::{self, IsNull, Output, ToSql}};
+use postgis_diesel::types::Point;
 use uuid::Uuid;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, PartialEq, Eq, FromSqlRow, AsExpression, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, FromSqlRow, AsExpression, Serialize, Deserialize, TryFromField)]
 #[diesel(sql_type = crate::schema::sql_types::ListingType)]
 pub enum ListingType {
     Selling,
@@ -57,6 +59,12 @@ impl FromSql<crate::schema::sql_types::PlantLocation, Pg> for PlantLocation {
     }
 }
 
+#[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Debug, PartialEq)]
+#[diesel(table_name = crate::schema::users)]
+pub struct User {
+    pub id: Uuid,
+    pub location: Option<Point>,
+}
 
 #[derive(Insertable, Serialize, Deserialize, Debug, PartialEq)]
 #[diesel(table_name = crate::schema::listings)]
@@ -67,6 +75,7 @@ pub struct InsertListing {
     pub author: Uuid,
     pub listing_type: ListingType,
     pub tradeable: Option<bool>,
+    pub thumbnail: Uuid
 }
 
 #[derive(Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize, Debug, PartialEq)]
@@ -75,13 +84,13 @@ pub struct InsertListing {
 #[diesel(belongs_to(Image, foreign_key = thumbnail))]
 #[diesel(belongs_to(Plant, foreign_key = identified_plant))]
 pub struct Listing {
-    pub id: i32,
+    pub id: Uuid,
     pub title: String,
     pub description: String,
     pub insertion_date: chrono::NaiveDateTime,
     pub author: Uuid,
     pub listing_type: ListingType,
-    pub thumbnail: Option<Uuid>,
+    pub thumbnail: Uuid,
     pub tradeable: bool,
     pub identified_plant: Option<i32>,
 }

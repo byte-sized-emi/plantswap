@@ -1,0 +1,31 @@
+--- src/full_schema.rs	2024-10-27 15:59:47.942089432 +0100
++++ src/schema.rs	2024-10-27 15:59:53.090986075 +0100
+@@ -1,14 +1,10 @@
+ // @generated automatically by Diesel CLI.
+ 
+ pub mod sql_types {
+     #[derive(diesel::query_builder::QueryId, Clone, diesel::sql_types::SqlType)]
+-    #[diesel(postgres_type(name = "geography"))]
+-    pub struct Geography;
+-
+-    #[derive(diesel::query_builder::QueryId, Clone, diesel::sql_types::SqlType)]
+     #[diesel(postgres_type(name = "listing_type"))]
+     pub struct ListingType;
+ 
+     #[derive(diesel::query_builder::QueryId, Clone, diesel::sql_types::SqlType)]
+     #[diesel(postgres_type(name = "plant_location"))]
+     pub struct PlantLocation;
+@@ -90,13 +86,12 @@
+     }
+ }
+ 
+ diesel::table! {
+     use diesel::sql_types::*;
+     use postgis_diesel::sql_types::*;
+-    use super::sql_types::Geography;
+ 
+     users (id) {
+         id -> Uuid,
+         location -> Nullable<Geography>,
+     }
+ }
