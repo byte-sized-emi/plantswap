@@ -1,0 +1,22 @@
+name: Check code
+
+on:
+  push:
+    branches: ['**']
+
+env:
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
+
+jobs:
+  check-code:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.3
+
+      - uses: actions/checkout@v4
+
+      - run: cargo check
+      - run: cargo clippy
+      - run: cargo audit

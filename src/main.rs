@@ -71,7 +71,12 @@ async fn main() {
         .layer(auth_layer)
         .nest_service("/assets", ServeDir::new("assets"));
 
+    #[cfg(debug_assertions)]
     let socket_address = "localhost:3000";
+
+    #[cfg(not(debug_assertions))]
+    let socket_address = "0.0.0.0:3000";
+
     info!("Listening on http://{socket_address}/");
 
     let listener = TcpListener::bind(socket_address).await.unwrap();

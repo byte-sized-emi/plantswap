@@ -10,7 +10,6 @@ pub struct AppConfig {
     s3_secret_key: String,
     s3_images_bucket: String,
     auth_server_url: String,
-    auth_redirect_url: String,
     auth_admin_role: String,
     auth_client_id: String,
     redis_url: String,
@@ -52,10 +51,6 @@ impl AppConfig {
 
     pub fn auth_server_url(&self) -> &str {
         &self.auth_server_url
-    }
-
-    pub fn auth_redirect_url(&self) -> &str {
-        &self.auth_redirect_url
     }
 
     pub fn auth_admin_role(&self) -> &str {
