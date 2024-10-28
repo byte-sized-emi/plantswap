@@ -6,7 +6,7 @@ on:
       - main
   workflow_dispatch:
   pull_request:
-    types: [ready_for_review]
+    types: [opened, reopened, synchronize, ready_for_review]
 
 env:
   SCCACHE_GHA_ENABLED: "true"
