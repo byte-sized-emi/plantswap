@@ -8,6 +8,14 @@
  - [ ] create account functionality
  - [ ] Display errors in create listing page directly in form (+ don't reset form data when it does)
 
+## Docker tags
+
+ - `dev-{{number}}`: Built from main branch, increases after each run. For testing.
+ - `dev-latest`: Latest `dev-*` build
+ - `pr-{{number}}`: Built when a pull request is marked as ready to review
+ - `release-v{{version}}`: Not used currently, will be used with tags to release versions
+ - `latest`: Will be used together with the release tags
+
 ## Plant identification sites
 
 ### Offline
