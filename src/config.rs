@@ -65,3 +65,9 @@ impl AppConfig {
         &self.redis_url
     }
 }
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}

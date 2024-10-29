@@ -111,7 +111,7 @@ struct InsertListingBody {
 }
 
 impl InsertListingBody {
-    pub fn to_insert_listing(self, author: Uuid, thumbnail: Uuid) -> InsertListing {
+    pub fn into_insert_listing(self, author: Uuid, thumbnail: Uuid) -> InsertListing {
         InsertListing {
             title: self.title,
             description: self.description,
@@ -128,7 +128,7 @@ async fn create_listing(
     State(backend): State<Backend>,
     TypedMultipart(body): TypedMultipart<InsertListingBody>,
 ) -> impl IntoResponse {
-    let author = auth_session.user.as_ref().unwrap().claims.user_id.clone();
+    let author = auth_session.user.as_ref().unwrap().claims.user_id;
 
     if body.pictures.is_empty() {
         let page = templates::pages::CreateListing::with_error("You need to upload at least one image");
@@ -136,7 +136,7 @@ async fn create_listing(
     }
 
     for picture in &body.pictures {
-        let content_type = (&picture.metadata.content_type)
+        let content_type = picture.metadata.content_type
             .as_ref()
             .map(|f| f.as_ref());
         if content_type != Some("image/jpeg") && content_type != Some("image/png") {
@@ -166,7 +166,7 @@ async fn create_listing(
 
     let thumbnail = picture_ids.first().unwrap();
 
-    let mut insert_listing = body.to_insert_listing(author, thumbnail.clone());
+    let mut insert_listing = body.into_insert_listing(author, *thumbnail);
 
     // Cleanup title
     insert_listing.title = insert_listing
