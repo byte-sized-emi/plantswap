@@ -66,10 +66,11 @@ async fn main() {
         .merge(frontend::router())
         .route("/ping", get(|| async { "Pong" }))
         .nest("/auth", auth::router())
+        .nest_service("/assets", ServeDir::new("assets"))
+        .fallback(frontend::fallback_handler)
         .with_state(global_state)
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024 /* 10MB */))
-        .layer(auth_layer)
-        .nest_service("/assets", ServeDir::new("assets"));
+        .layer(auth_layer);
 
     #[cfg(debug_assertions)]
     let socket_address = "localhost:3000";

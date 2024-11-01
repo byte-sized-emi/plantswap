@@ -1,9 +1,6 @@
 use askama::DynTemplate;
 use axum::{
-    extract::{Path, State},
-    response::{IntoResponse, Redirect},
-    routing::get,
-    Router,
+    extract::{Path, State}, http::StatusCode, response::{IntoResponse, Redirect}, routing::get, Router
 };
 use axum_htmx::HxRequest;
 use axum_login::login_required;
@@ -35,6 +32,16 @@ pub fn router() -> Router<AppState> {
         .route("/home", get(render_homepage))
         .route("/about", get(render_about))
         .route("/discover", get(render_discover))
+}
+
+pub async fn fallback_handler(
+    HxRequest(is_htmx): HxRequest,
+    auth_session: AuthSession,
+) -> (StatusCode, impl IntoResponse) {
+    let page = templates::pages::Error404Page;
+    let rendered_page = render_htmx_page(is_htmx, None, auth_session, Box::new(page));
+
+    (StatusCode::NOT_FOUND, rendered_page)
 }
 
 mod components {

@@ -90,6 +90,10 @@ pub mod pages {
             Error { error }
         }
     }
+
+    #[derive(Template)]
+    #[template(path = "pages/404.html")]
+    pub struct Error404Page;
 }
 
 fn generate_insertion_date(insertion_date: &NaiveDateTime) -> (String, String) {
