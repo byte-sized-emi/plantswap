@@ -1,4 +1,4 @@
-name: Check code
+name: Check backend code
 
 on:
   push:
@@ -7,6 +7,10 @@ on:
 env:
   SCCACHE_GHA_ENABLED: "true"
   RUSTC_WRAPPER: "sccache"
+
+defaults:
+    run:
+        working-directory: backend
 
 jobs:
   check-code:
