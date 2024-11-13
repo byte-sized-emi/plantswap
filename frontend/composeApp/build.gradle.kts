@@ -56,9 +56,6 @@ kotlin {
             implementation(compose.foundation)
             implementation(compose.material)
 
-            implementation(libs.androidx.activity.compose)
-            implementation(libs.androidx.activity.ktx)
-
             implementation(compose.ui)
             implementation(compose.components.resources)
             implementation(compose.components.uiToolingPreview)
@@ -68,11 +65,15 @@ kotlin {
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.androidx.navigation.compose)
             implementation(libs.kotlinx.datetime)
+
+
+            // peekaboo (Camera library)
+            implementation(libs.peekaboo.ui)
+            implementation(libs.peekaboo.image.picker)
         }
 
         androidMain.dependencies {
             implementation(compose.preview)
-            implementation(libs.androidx.activity.compose)
         }
 
         iosMain.dependencies {
