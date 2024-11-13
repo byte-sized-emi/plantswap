@@ -55,21 +55,30 @@ kotlin {
             implementation(compose.runtime)
             implementation(compose.foundation)
             implementation(compose.material)
+
+            implementation(libs.androidx.activity.compose)
+            implementation(libs.androidx.activity.ktx)
+
             implementation(compose.ui)
             implementation(compose.components.resources)
             implementation(compose.components.uiToolingPreview)
+
             implementation(libs.androidx.lifecycle.viewmodel)
             implementation(libs.androidx.lifecycle.runtime.compose)
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.androidx.navigation.compose)
+            implementation(libs.kotlinx.datetime)
         }
+
         androidMain.dependencies {
             implementation(compose.preview)
             implementation(libs.androidx.activity.compose)
         }
+
         iosMain.dependencies {
 
         }
+
         wasmJsMain.dependencies {
 
         }
