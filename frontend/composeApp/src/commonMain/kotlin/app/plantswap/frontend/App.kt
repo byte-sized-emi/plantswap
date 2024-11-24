@@ -6,7 +6,7 @@ import androidx.compose.material.Button
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavController
 import androidx.navigation.NavType
@@ -14,7 +14,15 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import io.ktor.client.HttpClient
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.defaultRequest
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
+import io.ktor.serialization.kotlinx.json.json
 import org.jetbrains.compose.ui.tooling.preview.Preview
+
+private val BASE_URL = "http://fedora-pc.local:3000/api/v1/"
 
 enum class PlantSwapScreens(val title: String) {
     Discover(title = "Discover"),
@@ -27,6 +35,18 @@ enum class PlantSwapScreens(val title: String) {
 @Preview
 fun App() {
     val navController = rememberNavController()
+    val httpClient = remember {
+        HttpClient {
+            install(ContentNegotiation) {
+                json()
+            }
+            defaultRequest {
+                url(BASE_URL)
+                contentType(ContentType.Application.Json)
+            }
+            expectSuccess = true
+        }
+    }
 
     MaterialTheme {
         Column(Modifier.fillMaxWidth()) {
@@ -43,7 +63,7 @@ fun App() {
                     )
                 }
                 composable(route = PlantSwapScreens.CreateListing.name) {
-                    CreateListingScreen(navController = navController)
+                    CreateListingScreen(navController = navController, httpClient = httpClient)
                 }
                 composable(route = PlantSwapScreens.SpecificListing.name + "/{listingId}",
                     arguments = listOf(navArgument("listingId") { type = NavType.LongType })

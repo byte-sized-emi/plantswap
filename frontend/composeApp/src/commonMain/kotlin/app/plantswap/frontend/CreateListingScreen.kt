@@ -1,11 +1,11 @@
 package app.plantswap.frontend
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.Button
 import androidx.compose.material.MaterialTheme
@@ -16,30 +16,49 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import com.preat.peekaboo.image.picker.SelectionMode
-import com.preat.peekaboo.image.picker.rememberImagePickerLauncher
-import com.preat.peekaboo.ui.camera.CameraMode
-import com.preat.peekaboo.ui.camera.PeekabooCamera
-import com.preat.peekaboo.ui.camera.rememberPeekabooCameraState
+import com.preat.peekaboo.image.picker.toImageBitmap
+import io.ktor.client.HttpClient
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
+@OptIn(ExperimentalUuidApi::class)
 @Composable
-fun CreateListingScreen(navController: NavController) {
-    var title by remember { mutableStateOf("") }
-    var description by remember { mutableStateOf("") }
-    var tradePossible by remember { mutableStateOf(false) }
+fun CreateListingScreen(navController: NavController, httpClient: HttpClient) {
+    var listing by remember { mutableStateOf(
+        Listing(
+            title = "",
+            description = "",
+            tradeable = false,
+            listingType = ListingType.Buying,
+            author = Uuid.NIL,
+        )
+    ) }
 
     var capturingImage by remember { mutableStateOf(false) }
-    var capturedImages: List<ByteArray> by remember { mutableStateOf(mutableListOf()) }
+    var imageId by rememberSaveable { mutableStateOf(1) }
+    val capturedImages: MutableMap<Int, ImageBitmap> by rememberSaveable { mutableStateOf(mutableMapOf()) }
+
+    val addImage: (ByteArray) -> Unit = { image ->
+        capturedImages[imageId] = image.toImageBitmap()
+        imageId++
+    }
+
+    val handleCreateListing = {
+        // TODO: Ktor request to backend to upload all images
+        // TODO: Ktor request to create listing
+        // TODO: Switch navigation to a view of the newly created listing
+    }
 
     if (capturingImage) {
         MultiImageCapturer(
-            onNewImages = { capturedImages += it },
+            onNewImages = { it.forEach { image -> addImage(image) } },
             capturingImage = capturingImage,
             onCapturingImageChange = { capturingImage = it }
         )
@@ -48,7 +67,6 @@ fun CreateListingScreen(navController: NavController) {
             modifier = Modifier.fillMaxWidth().padding(30.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-
             Text(
                 text = "Create new listing",
                 style = MaterialTheme.typography.h4
@@ -56,22 +74,33 @@ fun CreateListingScreen(navController: NavController) {
 
             Text("Captured ${capturedImages.size} images")
 
+            Row(modifier = Modifier.height(50.dp).fillMaxWidth()) {
+                capturedImages.forEach { image ->
+//                    Box {
+//                        IconButton(onClick = { capturedImages.remove(image.key) }) {
+//                            Icon(Icons.Filled.Delete, contentDescription = "Delete this image")
+//                        }
+                        Image(bitmap = image.value, contentDescription = "captured image preview")
+//                    }
+                }
+            }
+
             MultiImageCapturer(
-                onNewImages = { capturedImages += it },
+                onNewImages = { it.forEach { image -> addImage(image) } },
                 capturingImage = capturingImage,
                 onCapturingImageChange = { capturingImage = it }
             )
 
             OutlinedTextField(
-                value = title,
-                onValueChange = { title = it },
+                value = listing.title,
+                onValueChange = { listing.title = it },
                 label = { Text("Title") },
                 modifier = Modifier.fillMaxWidth(),
             )
 
             OutlinedTextField(
-                value = description,
-                onValueChange = { description = it },
+                value = listing.description,
+                onValueChange = { listing.description = it },
                 label = { Text("Description") },
                 minLines = 3,
                 singleLine = false,
@@ -80,10 +109,28 @@ fun CreateListingScreen(navController: NavController) {
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Switch(
-                    checked = tradePossible,
-                    onCheckedChange = { tradePossible = it },
+                    checked = listing.tradeable,
+                    onCheckedChange = { listing.tradeable = it },
                 )
                 Text("Trade possible")
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(
+                    checked = listing.listingType == ListingType.Buying,
+                    onCheckedChange = {
+                        listing.listingType = if (listing.listingType == ListingType.Buying) {
+                            ListingType.Selling
+                        } else {
+                            ListingType.Buying
+                        }
+                    },
+                )
+                Text("Buying?")
+            }
+
+            Button(onClick = { handleCreateListing() }) {
+                Text("Create Listing")
             }
         }
     }

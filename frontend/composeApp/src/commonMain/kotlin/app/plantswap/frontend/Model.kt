@@ -1,8 +1,14 @@
+@file:UseSerializers(UuidSerializer::class)
+@file:OptIn(ExperimentalUuidApi::class)
+
 package app.plantswap.frontend
 
+import kotlinx.datetime.Clock
+import kotlinx.datetime.Instant
 import kotlinx.datetime.LocalDateTime
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.UseSerializers
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
@@ -10,7 +16,6 @@ import kotlinx.serialization.encoding.Encoder
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
-@OptIn(ExperimentalUuidApi::class)
 private data object UuidSerializer : KSerializer<Uuid> {
     override val descriptor: SerialDescriptor = String.serializer().descriptor
 
@@ -21,21 +26,18 @@ private data object UuidSerializer : KSerializer<Uuid> {
         Uuid.parse(decoder.decodeString())
 }
 
-@OptIn(ExperimentalUuidApi::class)
 @Serializable
 data class Listing(
-    @Serializable(with = UuidSerializer::class)
-    var id: Uuid?,
+    var id: Uuid? = null,
     var title: String,
     var description: String,
     var tradeable: Boolean,
-    var insertionDate: LocalDateTime,
-    @Serializable(with = UuidSerializer::class)
+    var insertionDate: Instant = Clock.System.now(),
     var author: Uuid,
     var listingType: ListingType,
-    @Serializable(with = UuidSerializer::class)
-    var thumbnail: Uuid?,
-    var identified_plant: Long?
+    var pictures: List<Uuid> = emptyList(),
+    var thumbnail: Uuid? = null,
+    var identifiedPlant: Long? = null
 )
 
 enum class ListingType {
@@ -44,9 +46,7 @@ enum class ListingType {
 }
 
 @Serializable
-@OptIn(ExperimentalUuidApi::class)
 data class User (
-    @Serializable(with = UuidSerializer::class)
     var id: Uuid?,
     var location: Point?
 )

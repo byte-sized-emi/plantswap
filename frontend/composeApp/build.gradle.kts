@@ -66,6 +66,18 @@ kotlin {
             implementation(libs.androidx.navigation.compose)
             implementation(libs.kotlinx.datetime)
 
+            implementation(libs.ktor.client.core)
+            implementation(libs.ktor.client.content.negotiation)
+            implementation(libs.ktor.serialization.json)
+
+
+//            // kamel (image library)
+//            implementation(libs.kamel.image)
+//
+//            implementation("media.kamel:kamel-decoder-image-bitmap:1.0.1")
+//
+//            implementation("media.kamel:kamel-fetcher-resources-jvm:1.0.0")
+//            implementation("media.kamel:kamel-fetcher-resources-android:1.0.0")
 
             // peekaboo (Camera library)
             implementation(libs.peekaboo.ui)
@@ -74,10 +86,11 @@ kotlin {
 
         androidMain.dependencies {
             implementation(compose.preview)
+            implementation(libs.ktor.client.okhttp)
         }
 
         iosMain.dependencies {
-
+            implementation(libs.ktor.client.darwin)
         }
 
         wasmJsMain.dependencies {
