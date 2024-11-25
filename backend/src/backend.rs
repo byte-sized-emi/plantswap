@@ -4,6 +4,7 @@ use aws_config::{meta::region::RegionProviderChain, BehaviorVersion};
 use aws_sdk_s3::config::Credentials;
 use bytes::Bytes;
 use diesel::prelude::*;
+use itertools::Itertools;
 use tokio::sync::Mutex;
 use tracing::debug;
 use uuid::Uuid;
@@ -56,8 +57,15 @@ impl Backend {
             .map_err(Into::into)
     }
 
-    pub async fn create_listing(&self, listing: InsertListing) -> BackendResult<Listing> {
+    pub async fn create_listing(&self, mut listing: InsertListing) -> BackendResult<Listing> {
         use crate::schema::{users, listings};
+
+        listing.title = listing
+            .title
+            .split_whitespace()
+            .map(|word| word.trim())
+            .join(" ");
+
         let mut con = self.db.lock().await;
 
         let user_exists: i64 = users::table.find(listing.author)
@@ -73,6 +81,21 @@ impl Backend {
         listing.insert_into(listings::table)
             .returning(Listing::as_select())
             .get_result(&mut *con)
+            .map_err(Into::into)
+    }
+
+    pub async fn update_listing(&self, listing_update: &ListingUpdate) -> BackendResult<Option<Listing>> {
+        use crate::schema::listings;
+        if listing_update.id.is_none() {
+            return Err(BackendError::ListingUpdateMissingId);
+        }
+
+        let mut con = self.db.lock().await;
+
+        diesel::update(listings::table)
+            .set(listing_update)
+            .returning(Listing::as_select())
+            .get_result(&mut *con).optional()
             .map_err(Into::into)
     }
 
@@ -121,6 +144,8 @@ impl Backend {
 pub enum BackendError {
     #[error("Listing's owner has no location")]
     ListingHasNoLocation,
+    #[error("Listing update has no id!")]
+    ListingUpdateMissingId,
     #[error("DB error: {0}")]
     Db(#[from] diesel::result::Error),
     #[error("S3 error: {0}")]

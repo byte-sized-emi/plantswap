@@ -13,6 +13,7 @@ import androidx.compose.material.OutlinedTextField
 import androidx.compose.material.Switch
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SnapshotMutationPolicy
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,15 +32,10 @@ import kotlin.uuid.Uuid
 @OptIn(ExperimentalUuidApi::class)
 @Composable
 fun CreateListingScreen(navController: NavController, httpClient: HttpClient) {
-    var listing by remember { mutableStateOf(
-        Listing(
-            title = "",
-            description = "",
-            tradeable = false,
-            listingType = ListingType.Buying,
-            author = Uuid.NIL,
-        )
-    ) }
+    var title by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var tradePossible by remember { mutableStateOf(false) }
+    var listingType by remember { mutableStateOf(ListingType.Buying) }
 
     var capturingImage by remember { mutableStateOf(false) }
     var imageId by rememberSaveable { mutableStateOf(1) }
@@ -51,6 +47,12 @@ fun CreateListingScreen(navController: NavController, httpClient: HttpClient) {
     }
 
     val handleCreateListing = {
+        val listing = Listing(
+            title = title,
+            description = description,
+            tradeable = tradePossible,
+            listingType = listingType
+        )
         // TODO: Ktor request to backend to upload all images
         // TODO: Ktor request to create listing
         // TODO: Switch navigation to a view of the newly created listing
@@ -92,15 +94,15 @@ fun CreateListingScreen(navController: NavController, httpClient: HttpClient) {
             )
 
             OutlinedTextField(
-                value = listing.title,
-                onValueChange = { listing.title = it },
+                value = title,
+                onValueChange = { title = it },
                 label = { Text("Title") },
                 modifier = Modifier.fillMaxWidth(),
             )
 
             OutlinedTextField(
-                value = listing.description,
-                onValueChange = { listing.description = it },
+                value = description,
+                onValueChange = { description = it },
                 label = { Text("Description") },
                 minLines = 3,
                 singleLine = false,
@@ -109,17 +111,17 @@ fun CreateListingScreen(navController: NavController, httpClient: HttpClient) {
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Switch(
-                    checked = listing.tradeable,
-                    onCheckedChange = { listing.tradeable = it },
+                    checked = tradeable,
+                    onCheckedChange = { tradeable = it },
                 )
                 Text("Trade possible")
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Switch(
-                    checked = listing.listingType == ListingType.Buying,
+                    checked = listingType == ListingType.Buying,
                     onCheckedChange = {
-                        listing.listingType = if (listing.listingType == ListingType.Buying) {
+                        listingType = if (listingType == ListingType.Buying) {
                             ListingType.Selling
                         } else {
                             ListingType.Buying

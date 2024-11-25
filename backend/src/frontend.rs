@@ -173,14 +173,7 @@ async fn create_listing(
 
     let thumbnail = picture_ids.first().unwrap();
 
-    let mut insert_listing = body.into_insert_listing(author, *thumbnail);
-
-    // Cleanup title
-    insert_listing.title = insert_listing
-        .title
-        .split_whitespace()
-        .map(|word| word.trim())
-        .join(" ");
+    let insert_listing = body.into_insert_listing(author, *thumbnail);
 
     match backend.create_listing(insert_listing).await {
         Ok(listing) => {

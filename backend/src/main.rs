@@ -18,6 +18,7 @@ mod models;
 mod schema;
 mod config;
 mod auth;
+mod rest;
 
 #[derive(Clone, FromRef)]
 struct AppState {
@@ -64,6 +65,7 @@ async fn main() {
     let app = Router::new()
         .route("/", get(|| async { Redirect::permanent("/home") }))
         .merge(frontend::router())
+        .route("/api/v1", rest::router())
         .route("/ping", get(|| async { "Pong" }))
         .nest("/auth", auth::router())
         .nest_service("/assets", ServeDir::new("assets"))

@@ -1,3 +1,4 @@
+use core::str;
 use std::io::Write;
 use axum_typed_multipart::TryFromField;
 use diesel::{deserialize::{self, FromSql, FromSqlRow}, expression::AsExpression, pg::{Pg, PgValue}, prelude::*, serialize::{self, IsNull, Output, ToSql}};
@@ -24,10 +25,15 @@ impl ToSql<crate::schema::sql_types::ListingType, Pg> for ListingType {
 
 impl FromSql<crate::schema::sql_types::ListingType, Pg> for ListingType {
     fn from_sql(bytes: PgValue<'_>) -> deserialize::Result<Self> {
-        match bytes.as_bytes() {
-            b"buying" => Ok(ListingType::Buying),
-            b"selling" => Ok(ListingType::Selling),
-            _ => Err("Unrecognized enum variant".into()),
+        let string = str::from_utf8(bytes.as_bytes())
+            .map_err(|_| "Unrecognized enum variant")?;
+
+        if string.eq_ignore_ascii_case("buying") {
+            Ok(ListingType::Buying)
+        } else if string.eq_ignore_ascii_case("selling") {
+            Ok(ListingType::Selling)
+        } else {
+            Err("Unrecognized enum variant".into())
         }
     }
 }
@@ -92,6 +98,23 @@ pub struct Listing {
     pub listing_type: ListingType,
     pub thumbnail: Uuid,
     pub tradeable: bool,
+    pub identified_plant: Option<i32>,
+}
+
+/// fields set to None will not be updated.
+/// id **always** has to be set.
+#[derive(AsChangeset, Default, Debug)]
+#[diesel(table_name = crate::schema::listings)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+#[diesel(belongs_to(Image, foreign_key = thumbnail))]
+#[diesel(belongs_to(Plant, foreign_key = identified_plant))]
+pub struct ListingUpdate {
+    pub id: Option<Uuid>,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub listing_type: Option<ListingType>,
+    pub thumbnail: Option<Uuid>,
+    pub tradeable: Option<bool>,
     pub identified_plant: Option<i32>,
 }
 

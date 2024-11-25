@@ -33,7 +33,7 @@ data class Listing(
     var description: String,
     var tradeable: Boolean,
     var insertionDate: Instant = Clock.System.now(),
-    var author: Uuid,
+    var author: Uuid? = null,
     var listingType: ListingType,
     var pictures: List<Uuid> = emptyList(),
     var thumbnail: Uuid? = null,
