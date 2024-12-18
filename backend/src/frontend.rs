@@ -5,7 +5,6 @@ use axum::{
 use axum_htmx::HxRequest;
 use axum_login::login_required;
 use axum_typed_multipart::{FieldData, TryFromMultipart, TypedMultipart};
-use itertools::Itertools;
 use tracing::error;
 use uuid::Uuid;
 

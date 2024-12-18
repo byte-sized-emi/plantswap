@@ -103,7 +103,7 @@ pub struct Listing {
 
 /// fields set to None will not be updated.
 /// id **always** has to be set.
-#[derive(AsChangeset, Default, Debug)]
+#[derive(AsChangeset, Default, Deserialize, Debug)]
 #[diesel(table_name = crate::schema::listings)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 #[diesel(belongs_to(Image, foreign_key = thumbnail))]

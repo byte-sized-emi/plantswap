@@ -21,7 +21,7 @@ pub struct Backend {
 impl Backend {
     pub async fn new(config:  &AppConfig) -> Self {
         let con = PgConnection::establish(config.database_url())
-                .unwrap_or_else(|_| panic!("Error connecting to {}", config.database_url()));
+                .unwrap_or_else(|err| panic!("Error connecting to {}, error: {err}", config.database_url()));
 
         let db = Arc::new(Mutex::new(con));
 
@@ -106,6 +106,18 @@ impl Backend {
 
         let listing = listings.find(listing_id)
             .select(Listing::as_select())
+            .get_result(&mut *con).optional()?;
+
+        Ok(listing)
+    }
+
+    pub async fn delete_listing(&self, listing_id: Uuid) -> BackendResult<Option<Listing>> {
+        use crate::schema::listings::dsl::*;
+
+        let mut con = self.db.lock().await;
+
+        let listing = diesel::delete(listings.find(listing_id))
+            .returning(Listing::as_returning())
             .get_result(&mut *con).optional()?;
 
         Ok(listing)
