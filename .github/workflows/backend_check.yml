@@ -7,6 +7,7 @@ on:
 env:
   SCCACHE_GHA_ENABLED: "true"
   RUSTC_WRAPPER: "sccache"
+  CARGO_TERM_COLOR: always
 
 defaults:
     run:
@@ -24,3 +25,5 @@ jobs:
       - run: cargo check
       - run: cargo clippy -- -D warnings
       - run: cargo audit
+      - uses: taiki-e/install-action@nextest
+      - run: cargo nextest run

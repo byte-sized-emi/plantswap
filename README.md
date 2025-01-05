@@ -7,6 +7,7 @@
  - [x] 404 page
  - [ ] create account functionality
  - [ ] Display errors in create listing page directly in form (+ don't reset form data when it does)
+ - [ ] fine grained access control
 
 ## Docker tags
 
@@ -15,6 +16,10 @@
  - `pr-{{number}}`: Built when a pull request is marked as ready to review
  - `release-v{{version}}`: Not used currently, will be used with tags to release versions
  - `latest`: Will be used together with the release tags
+
+## Testing
+
+Install `cargo-nextest`, for example through `cargo binstall cargo-nextest --secure`.
 
 ## Plant identification sites
 

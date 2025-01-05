@@ -1,0 +1,6 @@
+[test-groups]
+backend = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'test(/^backend::/)'
+test-group = 'backend'

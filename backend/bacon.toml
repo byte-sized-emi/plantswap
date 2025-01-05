@@ -22,7 +22,7 @@ command = [
     "--color", "always",
 ]
 need_stdout = false
-watch = ["templates"]
+watch = ["templates", "migrations"]
 
 # Run clippy on all targets
 # To disable some lints, you may change the job this way:
@@ -44,7 +44,7 @@ command = [
     "--color", "always",
 ]
 need_stdout = false
-watch = ["templates"]
+watch = ["templates", "migrations"]
 
 # This job lets you run
 # - all tests: bacon test
@@ -52,11 +52,11 @@ watch = ["templates"]
 # - the tests of a package: bacon test -- -- -p config
 [jobs.test]
 command = [
-    "cargo", "test", "--color", "always",
-    "--", "--color", "always", # see https://github.com/Canop/bacon/issues/124
+    "cargo", "nextest", "run", # see https://github.com/Canop/bacon/issues/124
 ]
 need_stdout = true
-watch = ["templates"]
+watch = ["templates", "migrations"]
+env.CARGO_TERM_COLOR="always"
 
 [jobs.doc]
 command = ["cargo", "doc", "--color", "always", "--no-deps"]
@@ -85,7 +85,8 @@ command = [
 need_stdout = true
 allow_warnings = true
 background = true
-watch = ["templates"]
+watch = ["templates", "migrations"]
+
 
 # This parameterized job runs the example of your choice, as soon
 # as the code compiles.

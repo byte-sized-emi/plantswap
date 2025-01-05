@@ -33,3 +33,6 @@ askama = { version = "0.12.1", features = ["with-axum"] }
 askama_axum = "0.4.0"
 postgis_diesel = { version = "2.4.1", features = ["serde"] }
 axum_typed_multipart = "0.13.1"
+
+[dev-dependencies]
+diesel_migrations = { version = "2.2.0", features = ["postgres"] }
