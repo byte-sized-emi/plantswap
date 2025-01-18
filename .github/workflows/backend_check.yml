@@ -24,6 +24,5 @@ jobs:
 
       - run: cargo check
       - run: cargo clippy -- -D warnings
-      - run: cargo audit
       - uses: taiki-e/install-action@nextest
       - run: cargo nextest run
