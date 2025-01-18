@@ -24,5 +24,8 @@ jobs:
 
       - run: cargo check
       - run: cargo clippy -- -D warnings
+      - name: Run containers needed for tests
+        run: docker compose up
+
       - uses: taiki-e/install-action@nextest
       - run: cargo nextest run
