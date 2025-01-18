@@ -1,5 +1,5 @@
 -- for geospatial data
-CREATE EXTENSION postgis;
+CREATE EXTENSION IF NOT EXISTS postgis;
 
 CREATE TYPE listing_type AS ENUM ('selling', 'buying');
 CREATE TYPE plant_location AS ENUM ('outdoor', 'indoor');
