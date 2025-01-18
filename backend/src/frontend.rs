@@ -197,7 +197,7 @@ async fn create_listing(
 }
 
 fn convert_title_to_human_url(title: String) -> String {
-    return title
+    title
         .chars()
         .flat_map(|c| c.to_lowercase())
         .flat_map(|c| match c {
@@ -210,7 +210,7 @@ fn convert_title_to_human_url(title: String) -> String {
             _ => vec![],
         })
         .take(80)
-        .collect();
+        .collect()
 }
 
 async fn render_create_listing(

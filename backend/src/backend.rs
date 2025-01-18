@@ -166,7 +166,7 @@ impl Backend {
         Ok(file_key)
     }
 
-    pub async fn get_image<'a>(&self, image: Uuid) -> BackendResult<Option<(String, Bytes)>> {
+    pub async fn get_image(&self, image: Uuid) -> BackendResult<Option<(String, Bytes)>> {
         let result = self.s3_client.get_object()
             .bucket(&self.images_bucket)
             .key(image)
