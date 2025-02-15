@@ -13,24 +13,24 @@ askama_axum = "0.4.0"
 axum-htmx = "0.6.0"
 chrono = { version = "0.4.39", features = ["serde"] }
 config = "0.15.8"
-diesel = { version = "2.2.3", features = ["chrono", "postgres", "uuid"] }
+diesel = { version = "2.2.7", features = ["chrono", "postgres", "uuid"] }
 dotenvy = "0.15.7"
 jsonwebtoken = "9.3.1"
 oauth2 = "5.0.0"
 reqwest = { version = "0.12.12", features = ["json"] }
-serde = { version = "1.0.209", features = ["derive"] }
-thiserror = "1.0.63"
-tokio = { version = "1.40.0", features = ["full"] }
-tower-http = { version = "0.5.2", features = ["fs"] }
-tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
-uuid = { version = "1.10.0", features = ["serde", "v4", "v7"] }
-itertools = "0.13.0"
+serde = { version = "1.0.217", features = ["derive"] }
+thiserror = "2.0.11"
+tokio = { version = "1.43.0", features = ["full"] }
+tower-http = { version = "0.6.2", features = ["fs"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+uuid = { version = "1.13.1", features = ["serde", "v4", "v7"] }
+itertools = "0.14.0"
 
 tower-sessions-moka-store = "0.13.0"
 tower-sessions-redis-store = "0.13.0"
-time = "0.3.36"
-bytes = "1.7.1"
+time = "0.3.37"
+bytes = "1.10.0"
 askama = { version = "0.12.1", features = ["with-axum"] }
 postgis_diesel = { version = "2.4.1", features = ["serde"] }
 async-trait = "0.1.86"
