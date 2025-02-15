@@ -13,6 +13,7 @@ pub struct AppConfig {
     auth_admin_role: String,
     auth_client_id: String,
     redis_url: String,
+    plantnet_api_key: String,
 }
 
 impl AppConfig {
@@ -63,6 +64,10 @@ impl AppConfig {
 
     pub fn redis_url(&self) -> &str {
         &self.redis_url
+    }
+
+    pub fn plantnet_api_key(&self) -> &str {
+        &self.plantnet_api_key
     }
 }
 

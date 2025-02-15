@@ -98,7 +98,7 @@ pub struct Listing {
     pub listing_type: ListingType,
     pub thumbnail: Uuid,
     pub tradeable: bool,
-    pub identified_plant: Option<i32>,
+    pub identified_plant: Option<Uuid>,
 }
 
 /// fields set to None will not be updated.
@@ -115,7 +115,7 @@ pub struct ListingUpdate {
     pub listing_type: Option<ListingType>,
     pub thumbnail: Option<Uuid>,
     pub tradeable: Option<bool>,
-    pub identified_plant: Option<i32>,
+    pub identified_plant: Option<Uuid>,
 }
 
 #[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Debug, PartialEq)]
@@ -140,7 +140,7 @@ pub struct InsertImage {
 #[diesel(table_name = crate::schema::plants)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Plant {
-    pub id: i32,
+    pub id: Uuid,
     pub human_name: String,
     pub species: String,
     pub location: Option<PlantLocation>,

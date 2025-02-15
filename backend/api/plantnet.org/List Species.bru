@@ -1,0 +1,17 @@
+meta {
+  name: List Species
+  type: http
+  seq: 1
+}
+
+get {
+  url: https://my-api.plantnet.org/v2/species?api-key={{plantnet_apikey}}&pageSize=10&page=7550
+  body: none
+  auth: none
+}
+
+params:query {
+  api-key: {{plantnet_apikey}}
+  pageSize: 10
+  page: 7550
+}

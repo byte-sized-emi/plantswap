@@ -5,17 +5,17 @@ CREATE TYPE listing_type AS ENUM ('selling', 'buying');
 CREATE TYPE plant_location AS ENUM ('outdoor', 'indoor');
 
 CREATE TABLE users (
-    id UUID not null PRIMARY KEY,
+    id UUID PRIMARY KEY NOT NULL,
     location geography(POINT,4326)
 );
 
 CREATE TABLE plants (
-    id SERIAL PRIMARY KEY,
+    id uuid PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
     human_name VARCHAR(63) NOT NULL,
     species VARCHAR(127) NOT NULL,
     location plant_location,
     produces_fruit BOOLEAN,
-    description VARCHAR(1023) NOT NULL
+    description VARCHAR(1023) NOT NULL DEFAULT ''
 );
 
 CREATE TABLE images (
@@ -35,5 +35,5 @@ CREATE TABLE listings (
     thumbnail UUID NOT NULL REFERENCES images,
     -- whether or not the author would accept a trade
     tradeable BOOLEAN NOT NULL DEFAULT false,
-    identified_plant int REFERENCES plants
+    identified_plant uuid REFERENCES plants
 );

@@ -37,7 +37,7 @@ diesel::table! {
         listing_type -> ListingType,
         thumbnail -> Uuid,
         tradeable -> Bool,
-        identified_plant -> Nullable<Int4>,
+        identified_plant -> Nullable<Uuid>,
     }
 }
 
@@ -47,7 +47,7 @@ diesel::table! {
     use super::sql_types::PlantLocation;
 
     plants (id) {
-        id -> Int4,
+        id -> Uuid,
         #[max_length = 63]
         human_name -> Varchar,
         #[max_length = 127]

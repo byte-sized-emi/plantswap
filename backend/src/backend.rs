@@ -11,6 +11,8 @@ use uuid::Uuid;
 
 use crate::{config::AppConfig, models::*, schema::listings};
 
+mod recognition;
+
 #[derive(Clone)]
 pub struct Backend {
     pub db: Arc<Mutex<PgConnection>>,
