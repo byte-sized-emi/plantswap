@@ -2,7 +2,7 @@ use axum::{async_trait, extract::Query, http::StatusCode, response::{IntoRespons
 use axum_htmx::HxRequest;
 use axum_login::{tower_sessions::Session, AuthUser, AuthnBackend, UserId};
 use jsonwebtoken::{jwk::JwkSet, DecodingKey, Validation};
-use oauth2::{basic::{BasicClient, BasicRequestTokenError}, reqwest::{async_http_client, AsyncHttpClientError}, AuthUrl, AuthorizationCode, ClientId, CsrfToken, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, TokenResponse, TokenUrl};
+use oauth2::{basic::{BasicClient, BasicErrorResponseType}, AuthUrl, AuthorizationCode, ClientId, CsrfToken, EndpointNotSet, EndpointSet, HttpClientError, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, RequestTokenError, StandardErrorResponse, TokenResponse as _, TokenUrl};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info};
 use uuid::Uuid;
@@ -124,23 +124,23 @@ async fn redirect_route(
     }
 }
 
+pub type Oauth2Client = BasicClient<EndpointSet, EndpointNotSet, EndpointNotSet, EndpointNotSet, EndpointSet>;
+
 #[derive(Clone)]
 pub struct AuthState {
     pub jwk_set: JwkSet,
-    pub oauth2_client: BasicClient,
+    pub oauth2_client: Oauth2Client,
     pub backend: backend::Backend,
+    pub http_client: reqwest::Client,
 }
 
 pub async fn initialize_auth(config: &AppConfig, backend: backend::Backend) -> AuthState {
     let server_url = config.auth_server_url();
 
-    let oauth2_client = BasicClient::new(
-        ClientId::new(config.auth_client_id().to_string()),
-        None,
-        AuthUrl::new(format!("{server_url}/protocol/openid-connect/auth")).unwrap(),
-        Some(TokenUrl::new(format!("{server_url}/protocol/openid-connect/token")).unwrap())
-    )
-    .set_redirect_uri(RedirectUrl::new(format!("{}/auth/redirect", config.base_url())).unwrap());
+    let oauth2_client = BasicClient::new(ClientId::new(config.auth_client_id().to_string()))
+        .set_auth_uri(AuthUrl::new(format!("{server_url}/protocol/openid-connect/auth")).unwrap())
+        .set_token_uri(TokenUrl::new(format!("{server_url}/protocol/openid-connect/token")).unwrap())
+        .set_redirect_uri(RedirectUrl::new(format!("{}/auth/redirect", config.base_url())).unwrap());
 
     let jwk_certs_url = format!("{server_url}/protocol/openid-connect/certs");
 
@@ -149,7 +149,12 @@ pub async fn initialize_auth(config: &AppConfig, backend: backend::Backend) -> A
         .json().await
         .unwrap();
 
-    AuthState { jwk_set, oauth2_client, backend }
+    let http_client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("reqwest Client should build");
+
+    AuthState { jwk_set, oauth2_client, backend, http_client }
 }
 
 #[derive(Debug, Deserialize)]
@@ -166,7 +171,7 @@ pub enum BackendError {
     Reqwest(#[from] reqwest::Error),
 
     #[error("OAuth2 error: {0}")]
-    OAuth2(#[from] BasicRequestTokenError<AsyncHttpClientError>),
+    OAuth2(#[from] RequestTokenError<HttpClientError<reqwest::Error>, StandardErrorResponse<BasicErrorResponseType>>),
 
     #[error("DB error: {0}")]
     Diesel(#[from] diesel::result::Error),
@@ -192,7 +197,7 @@ impl AuthnBackend for AuthState {
             .oauth2_client
             .exchange_code(AuthorizationCode::new(creds.code))
             .set_pkce_verifier(creds.pkce_verifier)
-            .request_async(async_http_client)
+            .request_async(&self.http_client)
             .await?;
 
         let bearer = token_res.access_token().secret();

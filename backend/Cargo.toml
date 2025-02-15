@@ -4,17 +4,20 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-aws-config = "1.5.5"
-aws-sdk-s3 = "1.47.0"
+aws-config = "1.5.16"
+aws-sdk-s3 = "1.76.0"
 axum = { version = "0.7.5", features = ["http2", "macros", "multipart"] }
+axum_typed_multipart = "0.13.1"
+axum-login = "0.15.3"
+askama_axum = "0.4.0"
 axum-htmx = "0.6.0"
-chrono = { version = "0.4.38", features = ["serde"] }
-config = "0.14.0"
+chrono = { version = "0.4.39", features = ["serde"] }
+config = "0.15.8"
 diesel = { version = "2.2.3", features = ["chrono", "postgres", "uuid"] }
 dotenvy = "0.15.7"
-jsonwebtoken = "9.3.0"
-oauth2 = "4.4.2"
-reqwest = { version = "0.11", features = ["json"] }
+jsonwebtoken = "9.3.1"
+oauth2 = "5.0.0"
+reqwest = { version = "0.12.12", features = ["json"] }
 serde = { version = "1.0.209", features = ["derive"] }
 thiserror = "1.0.63"
 tokio = { version = "1.40.0", features = ["full"] }
@@ -26,14 +29,11 @@ itertools = "0.13.0"
 
 tower-sessions-moka-store = "0.13.0"
 tower-sessions-redis-store = "0.13.0"
-axum-login = "0.15.3"
 time = "0.3.36"
 bytes = "1.7.1"
 askama = { version = "0.12.1", features = ["with-axum"] }
-askama_axum = "0.4.0"
 postgis_diesel = { version = "2.4.1", features = ["serde"] }
-axum_typed_multipart = "0.13.1"
-async-trait = "0.1.85"
+async-trait = "0.1.86"
 
 [dev-dependencies]
 diesel_migrations = { version = "2.2.0", features = ["postgres"] }
