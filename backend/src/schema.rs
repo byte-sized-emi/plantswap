@@ -48,6 +48,9 @@ diesel::table! {
 
     plants (id) {
         id -> Uuid,
+        #[max_length = 127]
+        powo_id -> Varchar,
+        gbif_id -> Nullable<Int4>,
         #[max_length = 63]
         human_name -> Varchar,
         #[max_length = 127]

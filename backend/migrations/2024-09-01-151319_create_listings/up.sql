@@ -5,18 +5,22 @@ CREATE TYPE listing_type AS ENUM ('selling', 'buying');
 CREATE TYPE plant_location AS ENUM ('outdoor', 'indoor');
 
 CREATE TABLE users (
-    id UUID PRIMARY KEY NOT NULL,
+    id uuid PRIMARY KEY NOT NULL,
     location geography(POINT,4326)
 );
 
 CREATE TABLE plants (
     id uuid PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
+    powo_id VARCHAR(127) UNIQUE NOT NULL,
+    gbif_id int,
     human_name VARCHAR(63) NOT NULL,
     species VARCHAR(127) NOT NULL,
     location plant_location,
     produces_fruit BOOLEAN,
     description VARCHAR(1023) NOT NULL DEFAULT ''
 );
+
+CREATE UNIQUE INDEX plants_powo_id_index ON plants (powo_id);
 
 CREATE TABLE images (
     file_key UUID PRIMARY KEY,

@@ -1,0 +1,19 @@
+meta {
+  name: Identify Plant
+  type: http
+  seq: 2
+}
+
+post {
+  url: https://my-api.plantnet.org/v2/identify/all?include-related-images=false&no-reject=false&nb-results=10&lang=en&api-key={{plantnet_apikey}}
+  body: none
+  auth: none
+}
+
+params:query {
+  include-related-images: false
+  no-reject: false
+  nb-results: 10
+  lang: en
+  api-key: {{plantnet_apikey}}
+}

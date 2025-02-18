@@ -17,7 +17,7 @@ diesel = { version = "2.2.7", features = ["chrono", "postgres", "uuid"] }
 dotenvy = "0.15.7"
 jsonwebtoken = "9.3.1"
 oauth2 = "5.0.0"
-reqwest = { version = "0.12.12", features = ["json"] }
+reqwest = { version = "0.12.12", features = ["json", "multipart"] }
 serde = { version = "1.0.217", features = ["derive"] }
 thiserror = "2.0.11"
 tokio = { version = "1.43.0", features = ["full"] }

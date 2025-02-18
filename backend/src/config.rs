@@ -14,6 +14,7 @@ pub struct AppConfig {
     auth_client_id: String,
     redis_url: String,
     plantnet_api_key: String,
+    plantnet_api_url: String,
 }
 
 impl AppConfig {
@@ -68,6 +69,11 @@ impl AppConfig {
 
     pub fn plantnet_api_key(&self) -> &str {
         &self.plantnet_api_key
+    }
+
+    /// Plantnet api url, normally https://my-api.plantnet.org/v2/
+    pub fn plantnet_api_url(&self) -> &str {
+        &self.plantnet_api_url
     }
 }
 

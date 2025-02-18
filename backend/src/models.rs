@@ -6,7 +6,7 @@ use postgis_diesel::types::Point;
 use uuid::Uuid;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, PartialEq, Eq, FromSqlRow, AsExpression, Serialize, Deserialize, TryFromField)]
+#[derive(Debug, PartialEq, Eq, FromSqlRow, AsExpression, Serialize, Deserialize, TryFromField, Clone)]
 #[diesel(sql_type = crate::schema::sql_types::ListingType)]
 pub enum ListingType {
     Selling,
@@ -38,7 +38,7 @@ impl FromSql<crate::schema::sql_types::ListingType, Pg> for ListingType {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, FromSqlRow, AsExpression, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, FromSqlRow, AsExpression, Serialize, Deserialize, Clone)]
 #[diesel(sql_type = crate::schema::sql_types::PlantLocation)]
 pub enum PlantLocation {
     Outdoor,
@@ -65,14 +65,14 @@ impl FromSql<crate::schema::sql_types::PlantLocation, Pg> for PlantLocation {
     }
 }
 
-#[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Debug, PartialEq, Clone)]
 #[diesel(table_name = crate::schema::users)]
 pub struct User {
     pub id: Uuid,
     pub location: Option<Point>,
 }
 
-#[derive(Insertable, Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Insertable, Serialize, Deserialize, Debug, PartialEq, Clone)]
 #[diesel(table_name = crate::schema::listings)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct InsertListing {
@@ -84,7 +84,7 @@ pub struct InsertListing {
     pub thumbnail: Uuid
 }
 
-#[derive(Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize, Debug, PartialEq, Clone)]
 #[diesel(table_name = crate::schema::listings)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 #[diesel(belongs_to(Image, foreign_key = thumbnail))]
@@ -103,7 +103,7 @@ pub struct Listing {
 
 /// fields set to None will not be updated.
 /// id **always** has to be set.
-#[derive(AsChangeset, Default, Deserialize, Debug)]
+#[derive(AsChangeset, Default, Deserialize, Debug, Clone)]
 #[diesel(table_name = crate::schema::listings)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 #[diesel(belongs_to(Image, foreign_key = thumbnail))]
@@ -118,7 +118,7 @@ pub struct ListingUpdate {
     pub identified_plant: Option<Uuid>,
 }
 
-#[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Debug, PartialEq, Clone)]
 #[diesel(table_name = crate::schema::images)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 #[diesel(primary_key(file_key))]
@@ -128,7 +128,7 @@ pub struct Image {
     pub upload_date: chrono::NaiveDateTime,
 }
 
-#[derive(Insertable, Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Insertable, Serialize, Deserialize, Debug, PartialEq, Clone)]
 #[diesel(table_name = crate::schema::images)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct InsertImage {
@@ -136,11 +136,13 @@ pub struct InsertImage {
     pub uploaded_by_user: Option<Uuid>,
 }
 
-#[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Debug, PartialEq, Clone)]
 #[diesel(table_name = crate::schema::plants)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Plant {
     pub id: Uuid,
+    pub powo_id: String,
+    pub gbif_id: Option<i32>,
     pub human_name: String,
     pub species: String,
     pub location: Option<PlantLocation>,
@@ -148,7 +150,20 @@ pub struct Plant {
     pub description: String,
 }
 
-#[derive(Identifiable, Queryable, Selectable, Insertable, PartialEq)]
+#[derive(Insertable, Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[diesel(table_name = crate::schema::plants)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct InsertPlant {
+    pub powo_id: String,
+    pub gbif_id: Option<i32>,
+    pub human_name: String,
+    pub species: String,
+    pub location: Option<PlantLocation>,
+    pub produces_fruit: Option<bool>,
+    pub description: String,
+}
+
+#[derive(Identifiable, Queryable, Selectable, Insertable, PartialEq, Clone)]
 #[diesel(table_name = crate::schema::user_sessions)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct UserSession {

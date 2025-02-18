@@ -1,4 +1,5 @@
 -- This file should undo anything in `up.sql`
+DROP INDEX IF EXISTS plants_powo_id_index;
 DROP TABLE IF EXISTS listings;
 DROP TABLE IF EXISTS images;
 DROP TABLE IF EXISTS plants;

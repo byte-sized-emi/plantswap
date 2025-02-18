@@ -30,6 +30,7 @@ const LOGIN_URL: &str = "/auth/login";
 
 #[tokio::main]
 async fn main() {
+    dotenvy::from_filename(".env.local").ok();
     dotenvy::dotenv().ok();
 
     tracing_subscriber::fmt()
