@@ -9,7 +9,7 @@ use serde::Serialize;
 use crate::{config::AppConfig, models::Plant};
 
 #[async_trait]
-pub trait PlantRecogniser: Sized {
+pub trait PlantRecogniser: Clone {
     type E: Debug;
 
     fn new(config: &AppConfig) -> Self;
@@ -18,7 +18,7 @@ pub trait PlantRecogniser: Sized {
     /// Return 10 plants maximum. All plants returned must be in the
     /// database with those exact detailis (this method can insert them
     /// into the db incase of missing plants).
-    async fn analyze_plant(&mut self, db: &mut PgConnection, info: &PlantRecognitionInfo)
+    async fn analyze_plant(&self, db: &mut PgConnection, info: &PlantRecognitionInfo)
         -> Result<Vec<RankedPlant>, Self::E>;
 }
 
@@ -37,13 +37,14 @@ impl RankedPlant {
 #[derive(Debug, PartialEq, Clone)]
 pub struct PlantRecognitionInfo {
     // image data + filename
-    images: Vec<(Bytes, String)>,
-    location: Option<Point>,
+    pub images: Vec<(Bytes, String)>,
+    pub location: Option<Point>,
 }
 
 pub mod plantnet {
+    use std::sync::Arc;
+
     use axum::async_trait;
-    use bytes::Bytes;
     use diesel::{ExpressionMethods, Insertable, OptionalExtension, PgConnection, SelectableHelper};
     use reqwest::{multipart::{Form, Part}, Url};
     use serde::Deserialize;
@@ -52,19 +53,32 @@ pub mod plantnet {
 
     use super::*;
 
-    #[derive(Debug)]
-    struct PlantNetRecogniser {
-        http_client: reqwest::Client,
+    #[derive(Debug, Clone)]
+    pub struct PlantNetRecogniser {
+        http_client: Arc<reqwest::Client>,
         base_url: Url,
         apikey: String,
     }
 
     #[derive(Debug, thiserror::Error)]
-    enum PlantNetError {
+    pub enum PlantNetError {
         #[error("Reqwest error: {0}")]
         Reqwest(#[from] reqwest::Error),
         #[error("diesel/db error: {0}")]
         Diesel(#[from] diesel::result::Error),
+    }
+
+    impl PlantNetRecogniser {
+        pub fn from_parts(base_url: Url, apikey: String) -> Self {
+            let http_client = reqwest::Client::builder()
+                .https_only(true)
+                .build()
+                .expect("failed to built plantnet reqwest client");
+
+            let http_client = Arc::new(http_client);
+
+            Self { http_client, base_url, apikey }
+        }
     }
 
     #[async_trait]
@@ -72,28 +86,22 @@ pub mod plantnet {
         type E = PlantNetError;
 
         fn new(config: &AppConfig) -> Self {
-            let http_client = reqwest::Client::builder()
-                .https_only(true)
-                .build()
-                .expect("failed to built plantnet reqwest client");
-
             let base_url = Url::parse(config.plantnet_api_url())
                 .expect("invalid plantnet base url");
 
-            Self {
-                http_client,
+            PlantNetRecogniser::from_parts(
                 base_url,
-                apikey: config.plantnet_api_key().to_string()
-            }
+                config.plantnet_api_key().to_string()
+            )
         }
 
-        async fn analyze_plant(&mut self, db: &mut PgConnection, info: &PlantRecognitionInfo) -> Result<Vec<RankedPlant>, Self::E> {
+        async fn analyze_plant(&self, db: &mut PgConnection, info: &PlantRecognitionInfo) -> Result<Vec<RankedPlant>, Self::E> {
             let url = self.base_url.join("identity/all").unwrap();
 
             let mut body = Form::new();
 
             for (image, image_name) in &info.images {
-                let part = Part::stream(Bytes::from(image.clone())).file_name(image_name.clone());
+                let part = Part::stream(image.clone()).file_name(image_name.clone());
                 body = body.part("images", part);
             }
 

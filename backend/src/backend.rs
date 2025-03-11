@@ -5,22 +5,24 @@ use aws_sdk_s3::{config::Credentials, primitives::ByteStreamError};
 use bytes::Bytes;
 use diesel::prelude::*;
 use itertools::Itertools;
+use recognition::{plantnet::PlantNetRecogniser, PlantRecogniser};
 use tokio::sync::Mutex;
 use tracing::debug;
 use uuid::Uuid;
 
 use crate::{config::AppConfig, models::*, schema::listings};
 
-mod recognition;
+pub mod recognition;
 
 #[derive(Clone)]
-pub struct Backend {
+pub struct Backend<P: PlantRecogniser = PlantNetRecogniser> {
     pub db: Arc<Mutex<PgConnection>>,
     pub s3_client: aws_sdk_s3::Client,
     pub images_bucket: String,
+    pub plant_recognition: Arc<P>,
 }
 
-impl Backend {
+impl<P: PlantRecogniser> Backend<P> {
     pub async fn new(config:  &AppConfig) -> Self {
         let con = PgConnection::establish(config.database_url())
                 .unwrap_or_else(|err| panic!("Error connecting to {}, error: {err}", config.database_url()));
@@ -30,7 +32,8 @@ impl Backend {
         let s3_client = create_s3_client(
             config.s3_access_key(),
             config.s3_secret_key(),
-            config.s3_endpoint()
+            config.s3_endpoint(),
+            config.s3_images_bucket()
         ).await;
 
         let images_bucket = config.s3_images_bucket().to_owned();
@@ -44,8 +47,9 @@ impl Backend {
                 .send().await.unwrap();
         }
 
+        let plant_recognition = Arc::new(P::new(config));
 
-        Backend { db, s3_client, images_bucket }
+        Backend { db, s3_client, images_bucket, plant_recognition }
     }
 
     pub async fn get_all_listings(&self) -> BackendResult<Vec<Listing>> {
@@ -168,6 +172,7 @@ impl Backend {
         Ok(file_key)
     }
 
+    /// On success, returns a tuple of contenttype and bytes.
     pub async fn get_image(&self, image: Uuid) -> BackendResult<Option<(String, Bytes)>> {
         let result = self.s3_client.get_object()
             .bucket(&self.images_bucket)
@@ -188,7 +193,7 @@ impl Backend {
     }
 }
 
-async fn create_s3_client(access_key: &str, secret_key: &str, endpoint: &str) -> aws_sdk_s3::Client {
+async fn create_s3_client(access_key: &str, secret_key: &str, endpoint: &str, bucket: &str) -> aws_sdk_s3::Client {
     let region_provider = RegionProviderChain::default_provider().or_else("us-east-1");
     let credentials_provider = Credentials::new(access_key, secret_key, None, None, "Environment");
     let s3_config = aws_config::defaults(BehaviorVersion::latest())
@@ -202,21 +207,43 @@ async fn create_s3_client(access_key: &str, secret_key: &str, endpoint: &str) ->
         .force_path_style(true)
         .build();
 
-    aws_sdk_s3::Client::from_conf(s3_config)
+    let client = aws_sdk_s3::Client::from_conf(s3_config);
+
+    let head_bucket = client.head_bucket()
+        .bucket(bucket)
+        .send().await;
+
+    if head_bucket.is_err_and(
+        |err| err.into_service_error().is_not_found()
+    ) {
+        client.create_bucket()
+            .bucket(bucket)
+            .send().await.unwrap();
+    }
+
+    return client;
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum BackendError {
+
     #[error("Listing's owner has no location")]
     ListingHasNoLocation,
+
     #[error("Listing update has no id!")]
     ListingUpdateMissingId,
+
     #[error("DB error: {0}")]
     Db(#[from] diesel::result::Error),
+
     #[error("S3 error: {0}")]
     S3(#[from] aws_sdk_s3::Error),
+
     #[error("S3 bytestream error: {0}")]
-    S3Bytestream(#[from] ByteStreamError)
+    S3Bytestream(#[from] ByteStreamError),
+
+    #[error("Tokio join error")]
+    TokioJoinError(#[from] tokio::task::JoinError),
 }
 
 pub type BackendResult<T> = Result<T, BackendError>;
@@ -227,12 +254,13 @@ mod tests {
 
     use diesel::{Connection as _, PgConnection};
     use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness as _};
+    use reqwest::Url;
     use tokio::sync::Mutex;
     use uuid::Uuid;
 
     use crate::models::{InsertListing, ListingType};
 
-    use super::{create_s3_client, Backend};
+    use super::{create_s3_client, recognition::plantnet::PlantNetRecogniser, Backend};
 
     const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
 
@@ -240,11 +268,17 @@ mod tests {
         let db_con = PgConnection::establish("postgres://postgres:postgres@127.0.0.1:5432/postgres")
             .unwrap();
 
-        let s3_client = create_s3_client("root", "rootpassword", "http://localhost:9000/").await;
+        let plant_recognition = PlantNetRecogniser::from_parts(
+            Url::parse("https://example.net").unwrap(),
+            "fake_api_key".to_string()
+        );
+
+        let s3_client = create_s3_client("root", "rootpassword", "http://localhost:9000/", "images").await;
         let backend = Backend {
             db: Arc::new(Mutex::new(db_con)),
             s3_client,
-            images_bucket: "images".to_string()
+            images_bucket: "images".to_string(),
+            plant_recognition: Arc::new(plant_recognition),
         };
 
         {

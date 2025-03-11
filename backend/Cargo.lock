@@ -2680,6 +2680,7 @@ dependencies = [
  "diesel",
  "diesel_migrations",
  "dotenvy",
+ "futures",
  "itertools",
  "jsonwebtoken",
  "oauth2",
