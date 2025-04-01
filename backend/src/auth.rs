@@ -1,7 +1,9 @@
+use std::str::FromStr as _;
+
 use axum::{async_trait, extract::Query, http::StatusCode, response::{IntoResponse, Redirect}, routing::get, Router};
 use axum_htmx::HxRequest;
 use axum_login::{tower_sessions::Session, AuthUser, AuthnBackend, UserId};
-use jsonwebtoken::{jwk::JwkSet, DecodingKey, Validation};
+use jsonwebtoken::{jwk::JwkSet, Algorithm, DecodingKey, Validation};
 use oauth2::{basic::{BasicClient, BasicErrorResponseType}, AuthUrl, AuthorizationCode, ClientId, CsrfToken, EndpointNotSet, EndpointSet, HttpClientError, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, RequestTokenError, StandardErrorResponse, TokenResponse as _, TokenUrl};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info};
@@ -322,7 +324,10 @@ pub fn check_bearer(jwk_set: &JwkSet, bearer_token: &str) -> Result<UserClaims, 
 
     let decoding_key = DecodingKey::from_jwk(jwk)?;
 
-    let mut validation = Validation::new(unverified_header.alg);
+    let key_alg = jwk.common.key_algorithm.unwrap();
+    let alg = Algorithm::from_str(key_alg.to_string().as_str())?;
+
+    let mut validation = Validation::new(alg);
     validation.set_audience(&["plantswap"]);
 
     debug!("Trying to verify JWT");
