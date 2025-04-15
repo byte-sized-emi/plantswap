@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
 use auth::initialize_auth;
-use axum::{extract::{DefaultBodyLimit, FromRef}, response::Redirect, routing::get, Router};
+use axum::{extract::FromRef, response::Redirect, routing::get, Router};
 use axum_login::{tower_sessions::{CachingSessionStore, Expiry, SessionManagerLayer}, AuthManagerLayerBuilder};
 use backend::Backend;
 use config::AppConfig;
-use tower_http::services::ServeDir;
+use tower_http::{services::ServeDir, ServiceBuilderExt};
 use tokio::net::TcpListener;
+use tower::ServiceBuilder;
 use tower_sessions_moka_store::MokaStore;
 use tower_sessions_redis_store::{fred::{prelude::*, types::RedisConfig}, RedisStore};
 use tracing::{info, warn};
@@ -72,7 +73,12 @@ async fn main() {
         .nest_service("/assets", ServeDir::new("assets"))
         .fallback(frontend::fallback_handler)
         .with_state(global_state)
-        .layer(DefaultBodyLimit::max(10 * 1024 * 1024 /* 10MB */))
+        .layer(
+            ServiceBuilder::new()
+                .compression()
+                .request_body_limit(10 * 1024 * 1024 /* 10MB */)
+                .trace_for_http()
+        )
         .layer(auth_layer);
 
     #[cfg(debug_assertions)]

@@ -221,12 +221,11 @@ async fn create_s3_client(access_key: &str, secret_key: &str, endpoint: &str, bu
             .send().await.unwrap();
     }
 
-    return client;
+    client
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum BackendError {
-
     #[error("Listing's owner has no location")]
     ListingHasNoLocation,
 

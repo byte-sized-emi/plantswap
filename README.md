@@ -19,6 +19,8 @@
 
 Install `cargo-nextest`, for example through `cargo binstall cargo-nextest --secure`.
 
+Then, run `cargo nextest run`.
+
 # Dev
 
 ## Test file upload with cURL

@@ -46,13 +46,15 @@ async fn recognise_plant(
     State(backend): State<Backend>,
     Json(input): Json<RecognisePlantInput>,
 ) -> impl IntoResponse {
-    let images: Result<Vec<_>, _> = try_join_all(input.images.iter()
+    let image_uuids = input.images;
+
+    let fetch_image_results: Result<Vec<_>, _> = try_join_all(image_uuids.iter()
         .map(|uuid| async {
             backend.get_image(*uuid).await
         }))
         .await;
 
-    let images = match images {
+    let maybe_missing_images = match fetch_image_results {
         Ok(images) => images,
         Err(err) => {
             error!(?err, "Error while trying to download image");
@@ -61,16 +63,16 @@ async fn recognise_plant(
         }
     };
 
-    if let Some(index) = images.iter().position(|image| image.is_none()) {
-        let uuid = input.images[index];
+    if let Some(index) = maybe_missing_images.iter().position(|image| image.is_none()) {
+        let uuid = image_uuids[index];
         warn!(?uuid, "Couldn't find image");
         return (StatusCode::BAD_REQUEST, format!("Couldn't find image with uuid={uuid}"))
             .into_response();
     }
 
-    let images = images.into_iter()
+    let images = maybe_missing_images.into_iter()
         .map(|img| img.unwrap().1)
-        .zip(input.images.iter().map(Uuid::to_string))
+        .zip(image_uuids.iter().map(Uuid::to_string))
         .collect();
 
     let location = input.location.map(|l| l.to_point());

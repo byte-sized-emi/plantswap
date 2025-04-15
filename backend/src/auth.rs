@@ -1,4 +1,3 @@
-use std::str::FromStr as _;
 
 use axum::{async_trait, extract::Query, http::StatusCode, response::{IntoResponse, Redirect}, routing::get, Router};
 use axum_htmx::HxRequest;
@@ -311,6 +310,13 @@ impl AuthUser for User {
     }
 }
 
+const VALID_ALGORITHMS: &[Algorithm] = &[
+    Algorithm::RS256, Algorithm::RS384, Algorithm::RS512,
+    Algorithm::ES256, Algorithm::ES384,
+    Algorithm::PS256, Algorithm::PS384, Algorithm::PS512,
+    Algorithm::EdDSA,
+];
+
 pub fn check_bearer(jwk_set: &JwkSet, bearer_token: &str) -> Result<UserClaims, jsonwebtoken::errors::Error> {
     let unverified_header =
         jsonwebtoken::decode_header(bearer_token)?;
@@ -324,10 +330,8 @@ pub fn check_bearer(jwk_set: &JwkSet, bearer_token: &str) -> Result<UserClaims, 
 
     let decoding_key = DecodingKey::from_jwk(jwk)?;
 
-    let key_alg = jwk.common.key_algorithm.unwrap();
-    let alg = Algorithm::from_str(key_alg.to_string().as_str())?;
-
-    let mut validation = Validation::new(alg);
+    let mut validation = Validation::new(VALID_ALGORITHMS[0]);
+    validation.algorithms = VALID_ALGORITHMS.to_vec();
     validation.set_audience(&["plantswap"]);
 
     debug!("Trying to verify JWT");

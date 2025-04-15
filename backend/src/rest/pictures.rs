@@ -13,7 +13,6 @@ use uuid::Uuid;
 use crate::auth::AuthState;
 use crate::{auth::AuthSession, backend::Backend, AppState};
 
-
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", post(upload_picture))
