@@ -3,6 +3,10 @@ name: Check backend code
 on:
   push:
     branches: ['**']
+    paths: 
+      - backend/**
+      - .github/workflows/backend_check.yml
+      - docker-compose.yml
 
 env:
   SCCACHE_GHA_ENABLED: "true"
