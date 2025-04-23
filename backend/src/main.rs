@@ -73,13 +73,14 @@ async fn main() {
         .nest_service("/assets", ServeDir::new("assets"))
         .fallback(frontend::fallback_handler)
         .with_state(global_state)
+        .layer(auth_layer)
         .layer(
             ServiceBuilder::new()
                 .compression()
+                .decompression()
                 .request_body_limit(10 * 1024 * 1024 /* 10MB */)
                 .trace_for_http()
-        )
-        .layer(auth_layer);
+        );
 
     #[cfg(debug_assertions)]
     let socket_address = "localhost:3000";
