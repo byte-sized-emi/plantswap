@@ -5,7 +5,7 @@ use serde::Deserialize;
 use tracing::{error, warn};
 use uuid::Uuid;
 
-use crate::{auth::AuthSession, backend::{recognition::{PlantRecogniser, PlantRecognitionInfo}, Backend}, AppState};
+use crate::{backend::{recognition::{PlantRecogniser, PlantRecognitionInfo}, Backend}, AppState};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -42,7 +42,6 @@ impl Location {
 }
 
 async fn recognise_plant(
-    _auth_session: AuthSession,
     State(backend): State<Backend>,
     Json(input): Json<RecognisePlantInput>,
 ) -> impl IntoResponse {

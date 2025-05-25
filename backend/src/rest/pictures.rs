@@ -2,22 +2,22 @@ use axum::extract::Path;
 use axum::http::{header, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::{delete, get, post};
-use axum::Json;
+use axum::{Extension, Json};
 use axum::{extract::State, Router};
-use axum_login::login_required;
 use axum_typed_multipart::{FieldData, TryFromMultipart, TypedMultipart};
 use serde::Serialize;
 use tracing::{error, warn};
 use uuid::Uuid;
 
-use crate::auth::AuthState;
-use crate::{auth::AuthSession, backend::Backend, AppState};
+use crate::auth::layers::require_login;
+use crate::auth::UserClaims;
+use crate::{backend::Backend, AppState};
 
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", post(upload_picture))
         .route("/:id", delete(remove_picture))
-        .route_layer(login_required!(AuthState, login_url = crate::LOGIN_URL))
+        .route_layer(require_login())
         .route("/:id", get(get_picture))
 
 }
@@ -34,7 +34,7 @@ struct PictureUploadResponse {
 }
 
 async fn upload_picture(
-    auth_session: AuthSession,
+    Extension(user_claims): Extension<UserClaims>,
     State(backend): State<Backend>,
     TypedMultipart(picture_upload): TypedMultipart<PictureUpload>
 ) -> impl IntoResponse {
@@ -49,7 +49,7 @@ async fn upload_picture(
                 .into_response();
     }
 
-    let user_id = auth_session.user.unwrap().claims.user_id;
+    let user_id = user_claims.user_id;
 
     match backend.upload_image(user_id, picture.contents).await {
         Ok(id) => {

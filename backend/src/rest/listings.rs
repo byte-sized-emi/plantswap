@@ -1,18 +1,21 @@
-use axum::{extract::{Path, State}, http::StatusCode, routing::{get, post}, Json, Router};
+use axum::{extract::{Path, State}, http::StatusCode, routing::{get, post, put}, Extension, Json, Router};
 use serde::Deserialize;
 use tracing::error;
 use uuid::Uuid;
 use axum::response::IntoResponse;
 
-use crate::{auth::AuthSession, backend::Backend, models::{InsertListing, ListingType, ListingUpdate}, AppState};
+use crate::{auth::{layers::require_login, UserClaims}, backend::Backend, models::{InsertListing, ListingType, ListingUpdate}, AppState};
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/", post(create_listing).get(get_all_listings))
-        .route("/:id", get(get_listing).put(update_listing)
+        .route("/", post(create_listing))
+        .route("/:id", put(update_listing)
             .patch(update_listing).delete(delete_listing))
-}
+        .route_layer(require_login())
 
+        .route("/", get(get_all_listings))
+        .route("/:id", get(get_listing))
+}
 
 #[derive(Deserialize)]
 struct InsertListingBody {
@@ -37,7 +40,7 @@ impl InsertListingBody {
 }
 
 async fn create_listing(
-    auth_session: AuthSession,
+    Extension(auth_session): Extension<UserClaims>,
     State(backend): State<Backend>,
     Json(body): Json<InsertListingBody>
 ) -> impl IntoResponse {
@@ -49,7 +52,7 @@ async fn create_listing(
         return (StatusCode::BAD_REQUEST, "Thumbnail is not in the pictures supplied").into_response();
     }
 
-    let author_id = auth_session.user.as_ref().unwrap().claims.user_id;
+    let author_id = auth_session.user_id;
 
     let insert_listing = body.into_insert_listing(author_id);
 
@@ -65,7 +68,6 @@ async fn create_listing(
 }
 
 async fn get_all_listings(
-    _auth_session: AuthSession,
     State(backend): State<Backend>
 ) -> impl IntoResponse {
     match backend.get_all_listings().await {
@@ -81,7 +83,6 @@ async fn get_all_listings(
 }
 
 async fn get_listing(
-    _auth_session: AuthSession,
     State(backend): State<Backend>,
     Path(id): Path<Uuid>,
 ) -> impl IntoResponse {
@@ -102,7 +103,6 @@ async fn get_listing(
 }
 
 async fn update_listing(
-    _auth_session: AuthSession,
     State(backend): State<Backend>,
     Path(id): Path<Uuid>,
     Json(mut listing_update): Json<ListingUpdate>,
@@ -124,7 +124,6 @@ async fn update_listing(
 }
 
 async fn delete_listing(
-    _auth_session: AuthSession,
     State(backend): State<Backend>,
     Path(id): Path<Uuid>,
 )

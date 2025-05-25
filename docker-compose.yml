@@ -5,8 +5,10 @@ services:
       - 5432:5432
     volumes:
       - db-data:/var/lib/postgresql/data
+      - ./init_dbs.sql://docker-entrypoint-initdb.d/init_dbs.sql
     environment:
       POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: plantswap
 
   minio:
     image: docker.io/bitnami/minio:2024
@@ -43,14 +45,6 @@ services:
     depends_on:
       - postgres
 
-  redis:
-    image: redis:7.4-alpine
-    ports:
-      - '6379:6379'
-    command: redis-server --save 20 1 --loglevel warning
-    volumes:
-      - redis-data:/data
-
   plantswap:
     image: ghcr.io/schitcrafter/plantswap:latest
     environment:
@@ -66,6 +60,4 @@ volumes:
   db-data:
     driver: local
   minio-data:
-    driver: local
-  redis-data:
     driver: local

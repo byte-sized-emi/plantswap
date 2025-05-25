@@ -16,7 +16,7 @@ pub const fn require_login() -> RequireLogin {
 }
 
 /// A middleware layer that requires users to be logged in to access the route.
-/// 
+///
 /// Usage:
 /// ```rust
 /// app.route_layer(RequireLogin::new())

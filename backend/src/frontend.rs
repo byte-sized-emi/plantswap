@@ -1,6 +1,6 @@
 use askama::DynTemplate;
 use axum::{
-    extract::{Path, State}, http::StatusCode, middleware, response::{IntoResponse, Redirect}, routing::get, Extension, Router
+    extract::{Path, State}, http::StatusCode, response::{IntoResponse, Redirect}, routing::get, Extension, Router
 };
 use axum_htmx::HxRequest;
 use axum_typed_multipart::{FieldData, TryFromMultipart, TypedMultipart};
@@ -62,7 +62,7 @@ mod components {
 fn render_htmx_page(
     is_htmx: bool,
     current_selection: Option<PageSelection>,
-    auth_session: Option<UserClaims>,
+    user_claims: Option<UserClaims>,
     page: Box<dyn DynTemplate>,
 ) -> impl IntoResponse {
     if is_htmx {
@@ -74,7 +74,7 @@ fn render_htmx_page(
     } else {
         templates::Base {
             page_selector: templates::PageSelector { current_selection },
-            login_button: templates::LoginButton { auth_session },
+            login_button: templates::LoginButton { user_claims },
             page,
         }
         .into_response()
@@ -82,7 +82,7 @@ fn render_htmx_page(
 }
 
 async fn show_listing(
-    auth_session: AuthSession,
+    Extension(auth_session): Extension<Option<UserClaims>>,
     HxRequest(is_htmx): HxRequest,
     State(backend): State<Backend>,
     Path((_human_name, id)): Path<(String, Uuid)>,
@@ -126,15 +126,15 @@ impl InsertListingBody {
 }
 
 async fn create_listing(
-    auth_session: AuthSession,
+    Extension(auth_session): Extension<UserClaims>,
     State(backend): State<Backend>,
     TypedMultipart(body): TypedMultipart<InsertListingBody>,
 ) -> impl IntoResponse {
-    let author = auth_session.user.as_ref().unwrap().claims.user_id;
+    let author = auth_session.user_id;
 
     if body.pictures.is_empty() {
         let page = templates::pages::CreateListing::with_error("You need to upload at least one image");
-        return render_htmx_page(true, None, auth_session, Box::new(page)).into_response();
+        return render_htmx_page(true, None, Some(auth_session), Box::new(page)).into_response();
     }
 
     for picture in &body.pictures {
@@ -144,11 +144,11 @@ async fn create_listing(
         if content_type != Some("image/jpeg") && content_type != Some("image/png") {
             error!(?content_type, "Invalid content type");
             let page = templates::pages::CreateListing::with_error("Invalid image type");
-            return render_htmx_page(true, None, auth_session, Box::new(page)).into_response();
+            return render_htmx_page(true, None, Some(auth_session), Box::new(page)).into_response();
         }
     }
 
-    let user_id = auth_session.user.as_ref().unwrap().claims.user_id;
+    let user_id = auth_session.user_id;
 
     let mut picture_ids = Vec::new();
 
@@ -161,7 +161,7 @@ async fn create_listing(
             Err(err) => {
                 error!(?err, "Error while uploading image");
                 let page = templates::pages::CreateListing::with_error("Internal server error");
-                return render_htmx_page(true, None, auth_session, Box::new(page)).into_response();
+                return render_htmx_page(true, None, Some(auth_session), Box::new(page)).into_response();
             }
         }
     }
@@ -182,12 +182,12 @@ async fn create_listing(
             let page = templates::pages::CreateListing::with_error(
                 "Your account needs to have a location set in order to create a listing"
             );
-            render_htmx_page(true, None, auth_session, Box::new(page)).into_response()
+            render_htmx_page(true, None, Some(auth_session), Box::new(page)).into_response()
         }
         Err(err) => {
             error!(?err, "Database error while creating listing");
             let page = templates::pages::CreateListing::with_error("Internal server error, try again later");
-            render_htmx_page(true, None, auth_session, Box::new(page)).into_response()
+            render_htmx_page(true, None, Some(auth_session), Box::new(page)).into_response()
         }
     }
 }
@@ -211,7 +211,7 @@ fn convert_title_to_human_url(title: String) -> String {
 
 async fn render_create_listing(
     HxRequest(is_htmx): HxRequest,
-    auth_session: AuthSession,
+    Extension(auth_session): Extension<Option<UserClaims>>,
 ) -> impl IntoResponse {
     render_htmx_page(
         is_htmx,
@@ -223,7 +223,7 @@ async fn render_create_listing(
 
 async fn render_discover(
     State(backend): State<Backend>,
-    auth_session: AuthSession,
+    Extension(auth_session): Extension<Option<UserClaims>>,
     HxRequest(is_htmx): HxRequest,
 ) -> impl IntoResponse {
     let listings = match backend.get_all_listings().await {
@@ -253,7 +253,7 @@ async fn render_discover(
 
 async fn render_homepage(
     HxRequest(is_htmx): HxRequest,
-    auth_session: AuthSession,
+    Extension(auth_session): Extension<Option<UserClaims>>,
 ) -> impl IntoResponse {
     let page = templates::pages::Home;
 
@@ -267,7 +267,7 @@ async fn render_homepage(
 
 async fn render_about(
     HxRequest(is_htmx): HxRequest,
-    auth_session: AuthSession,
+    Extension(auth_session): Extension<Option<UserClaims>>,
 ) -> impl IntoResponse {
     let page = templates::pages::About;
 

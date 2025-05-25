@@ -1,6 +1,6 @@
 <div class="login-or-profile-button">
-    {% if let Some(user) = auth_session.user %}
-        {{ user.claims.name }}
+    {% if let Some(user) = user_claims %}
+        {{ user.name }}
     {% else %}
         <a href="/auth/login">Login</a>
     {% endif %}

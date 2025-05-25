@@ -40,7 +40,11 @@ async fn main() {
 
     let auth_state = initialize_auth(&config).await;
 
-    let global_state = AppState { backend, auth_state, config: Arc::new(config) };
+    let global_state = AppState {
+        backend,
+        auth_state: auth_state.clone(),
+        config: Arc::new(config)
+    };
 
     let app = Router::new()
         .route("/", get(|| async { Redirect::permanent("/home") }))

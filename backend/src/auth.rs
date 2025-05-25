@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Query, Request, State}, http::StatusCode, middleware::{FromFn, Next}, response::{IntoResponse, Redirect}, routing::get, Extension, Router
+    extract::{Query, Request, State}, http::StatusCode, middleware::Next, response::{IntoResponse, Redirect}, routing::get, Extension, Router
 };
 use axum_extra::extract::{CookieJar, cookie::Cookie};
 use axum_htmx::HxRequest;
@@ -283,8 +283,6 @@ pub async fn base(
     let mut user: Option<UserClaims> = None;
 
     // JWT takes precedence if present
-    // FIXME: If JWT is invalid (for example, expired), try to use
-    //        refresh token as fallback
     if let Some(jwt) = jwt {
         match check_bearer(&auth_state.jwk_set, &jwt) {
             Ok(claims) => {
@@ -292,7 +290,7 @@ pub async fn base(
             }
             Err(_) => {
                 // Clear potentially compromised cookies
-                jar = jar.remove(BEARER_COOKIE_NAME).remove(REFRESH_COOKIE_NAME);
+                jar = jar.remove(BEARER_COOKIE_NAME);
             }
         }
     }

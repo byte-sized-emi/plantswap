@@ -162,11 +162,3 @@ pub struct InsertPlant {
     pub produces_fruit: Option<bool>,
     pub description: String,
 }
-
-#[derive(Identifiable, Queryable, Selectable, Insertable, PartialEq, Clone)]
-#[diesel(table_name = crate::schema::user_sessions)]
-#[diesel(check_for_backend(diesel::pg::Pg))]
-pub struct UserSession {
-    pub id: Uuid,
-    pub access_token: String,
-}

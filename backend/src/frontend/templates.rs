@@ -2,7 +2,7 @@ use askama::DynTemplate;
 use askama_axum::Template;
 use chrono::{Local, NaiveDateTime};
 
-use crate::auth::AuthSession;
+use crate::auth::UserClaims;
 
 use super::PageSelection;
 
@@ -33,7 +33,7 @@ pub struct PageReplacement {
 #[derive(Template)]
 #[template(path = "login_button.html")]
 pub struct LoginButton {
-    pub auth_session: AuthSession
+    pub user_claims: Option<UserClaims>,
 }
 
 pub mod pages {
