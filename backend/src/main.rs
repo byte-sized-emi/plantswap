@@ -1,15 +1,12 @@
 use std::sync::Arc;
 
-use auth::initialize_auth;
-use axum::{extract::FromRef, response::Redirect, routing::get, Router};
-use axum_login::{tower_sessions::{CachingSessionStore, Expiry, SessionManagerLayer}, AuthManagerLayerBuilder};
+use auth::{initialize_auth, AuthState};
+use axum::{extract::FromRef, middleware, response::Redirect, routing::get, Router};
 use backend::Backend;
 use config::AppConfig;
 use tower_http::{services::ServeDir, ServiceBuilderExt};
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
-use tower_sessions_moka_store::MokaStore;
-use tower_sessions_redis_store::{fred::{prelude::*, types::RedisConfig}, RedisStore};
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
@@ -24,10 +21,9 @@ mod rest;
 #[derive(Clone, FromRef)]
 struct AppState {
     pub backend: Backend,
+    pub auth_state: AuthState,
     pub config: Arc<AppConfig>,
 }
-
-const LOGIN_URL: &str = "/auth/login";
 
 #[tokio::main]
 async fn main() {
@@ -42,27 +38,9 @@ async fn main() {
 
     let backend = Backend::new(&config).await;
 
-    let auth_state = initialize_auth(&config, backend.clone()).await;
+    let auth_state = initialize_auth(&config).await;
 
-    let moka_store = MokaStore::new(Some(2_000));
-    let redis_config = RedisConfig::from_url(config.redis_url()).unwrap();
-    let pool = RedisPool::new(redis_config, None, None, None, 4).unwrap();
-
-    let _redis_conn = pool.connect();
-    pool.wait_for_connect().await.unwrap();
-
-    let redis_store = RedisStore::new(pool);
-    let caching_store = CachingSessionStore::new(moka_store, redis_store);
-
-    let session_layer = SessionManagerLayer::new(caching_store)
-        .with_expiry(Expiry::OnInactivity(time::Duration::days(100)));
-
-    #[cfg(debug_assertions)]
-    let session_layer = session_layer.with_secure(false);
-
-    let auth_layer = AuthManagerLayerBuilder::new(auth_state, session_layer).build();
-
-    let global_state = AppState { backend, config: Arc::new(config) };
+    let global_state = AppState { backend, auth_state, config: Arc::new(config) };
 
     let app = Router::new()
         .route("/", get(|| async { Redirect::permanent("/home") }))
@@ -73,7 +51,7 @@ async fn main() {
         .nest_service("/assets", ServeDir::new("assets"))
         .fallback(frontend::fallback_handler)
         .with_state(global_state)
-        .layer(auth_layer)
+        .layer(middleware::from_fn_with_state(auth_state, auth::base))
         .layer(
             ServiceBuilder::new()
                 .compression()

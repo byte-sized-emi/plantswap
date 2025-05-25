@@ -1,14 +1,25 @@
-
-use axum::{async_trait, extract::Query, http::StatusCode, response::{IntoResponse, Redirect}, routing::get, Router};
+use axum::{
+    extract::{Query, Request, State}, http::StatusCode, middleware::{FromFn, Next}, response::{IntoResponse, Redirect}, routing::get, Extension, Router
+};
+use axum_extra::extract::{CookieJar, cookie::Cookie};
 use axum_htmx::HxRequest;
-use axum_login::{tower_sessions::Session, AuthUser, AuthnBackend, UserId};
-use jsonwebtoken::{jwk::JwkSet, Algorithm, DecodingKey, Validation};
-use oauth2::{basic::{BasicClient, BasicErrorResponseType}, AuthUrl, AuthorizationCode, ClientId, CsrfToken, EndpointNotSet, EndpointSet, HttpClientError, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, RequestTokenError, StandardErrorResponse, TokenResponse as _, TokenUrl};
+use jsonwebtoken::{Algorithm, DecodingKey, Validation, jwk::JwkSet};
+use oauth2::{
+    AuthUrl, AuthorizationCode, ClientId, CsrfToken, EndpointNotSet, EndpointSet, HttpClientError,
+    PkceCodeChallenge, RedirectUrl, RefreshToken, RequestTokenError, StandardErrorResponse,
+    TokenResponse as _, TokenUrl,
+    basic::{BasicClient, BasicErrorResponseType},
+};
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error, info};
+use time::Duration;
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use crate::{backend, config::AppConfig, models::UserSession, AppState};
+use crate::{config::AppConfig, AppState};
+
+pub mod layers;
+
+const LOGIN_URL: &str = "/auth/login";
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -16,20 +27,30 @@ pub fn router() -> Router<AppState> {
         .route("/redirect", get(redirect_route))
 }
 
-const CSRF_STATE_KEY: &str = "oauth.csrf-state";
-const PKCE_VERIFIER_KEY: &str = "oauth.pkce-verifier";
-const NEXT_URL_KEY: &str = "oauth.next_url";
+const BEARER_COOKIE_NAME: &str = "bearer";
+const REFRESH_COOKIE_NAME: &str = "refresh";
+
+const LOGIN_CSRF_COOKIE: &str = "login_csrf";
+const LOGIN_PKCE_COOKIE: &str = "login_pkce";
+const LOGIN_NEXT_URL_COOKIE: &str = "login_next_url";
 
 #[derive(Deserialize)]
 struct NextUrl {
-    pub next: Option<String>
+    #[serde(default)]
+    pub next: Option<String>,
 }
 
-async fn login_route(auth_session: AuthSession, session: Session, HxRequest(is_htmx): HxRequest, Query(next_url): Query<NextUrl>) -> impl IntoResponse {
+async fn login_route(
+    State(auth_state): State<AuthState>,
+    mut jar: CookieJar,
+    HxRequest(is_htmx): HxRequest,
+    Query(next_url): Query<NextUrl>,
+) -> impl IntoResponse {
     let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
 
     // Generate the full authorization URL.
-    let (auth_url, csrf_token) = auth_session.backend.oauth2_client
+    let (auth_url, csrf_token) = auth_state
+        .oauth2_client
         .authorize_url(CsrfToken::new_random)
         // Set the desired scopes.
         // .add_scope(Scope::new("read".to_string()))
@@ -37,28 +58,37 @@ async fn login_route(auth_session: AuthSession, session: Session, HxRequest(is_h
         .set_pkce_challenge(pkce_challenge)
         .url();
 
-    session.insert(CSRF_STATE_KEY, csrf_token.secret())
-        .await.unwrap();
+    jar = jar
+        .add(new_secure_cookie(
+            LOGIN_CSRF_COOKIE,
+            csrf_token.secret().clone(),
+            Duration::minutes(10),
+        ))
+        .add(new_secure_cookie(
+            LOGIN_PKCE_COOKIE,
+            serde_json::to_string(&pkce_verifier).unwrap(),
+            Duration::minutes(10),
+        ));
 
-    session.insert(PKCE_VERIFIER_KEY, pkce_verifier)
-        .await.unwrap();
-
-    if let Some(next) = next_url.next {
-        session.insert(NEXT_URL_KEY,  next)
-            .await.unwrap();
+    if let Some(next_url) = next_url.next {
+        jar = jar.add(Cookie::new(LOGIN_NEXT_URL_COOKIE, next_url));
     }
 
     info!("Sending user to auth url");
 
     if is_htmx {
-        (
-            StatusCode::OK,
-            [("Hx-Redirect", auth_url.to_string())]
-        )
-        .into_response()
+        (StatusCode::OK, [("Hx-Redirect", auth_url.to_string())], jar).into_response()
     } else {
-        Redirect::to(auth_url.as_str()).into_response()
+        (jar, Redirect::to(auth_url.as_str())).into_response()
     }
+}
+
+fn new_secure_cookie(name: &'static str, value: String, max_age: Duration) -> Cookie<'static> {
+    Cookie::build((name, value))
+        .http_only(true)
+        .secure(true)
+        .max_age(max_age)
+        .build()
 }
 
 #[derive(Debug, Deserialize)]
@@ -69,85 +99,143 @@ struct AuthzResp {
 
 /// The user gets redirected back here from the auth provider after a successful login.
 async fn redirect_route(
-    mut auth_session: AuthSession,
-    session: Session,
-    Query(query_params): Query<AuthzResp>
+    State(auth_state): State<AuthState>,
+    mut jar: CookieJar,
+    Extension(user): Extension<Option<UserClaims>>,
+    Query(query_params): Query<AuthzResp>,
 ) -> impl IntoResponse {
-    if let Some(user) = auth_session.user {
-        debug!("User {:?} was already logged in but accessed redirect route", user.id);
+    if let Some(user) = user {
+        debug!(
+            "User {:?} was already logged in but accessed redirect route",
+            user.user_id
+        );
         return Redirect::to("/").into_response();
     }
 
-    let old_state = match session.remove(CSRF_STATE_KEY).await {
-        Err(err) => {
-            error!(?err, id = ?session.id(), "Couldn't get CSRF_STATE_KEY from session");
-            return StatusCode::BAD_REQUEST.into_response();
+    let old_state = match jar.get(LOGIN_CSRF_COOKIE) {
+        Some(old_state) => old_state.value().to_string(),
+        None => {
+            error!("User tried accessing redirect route without csrf cookie");
+            return (
+                StatusCode::BAD_REQUEST,
+                format!("Missing {LOGIN_CSRF_COOKIE} cookie"),
+            )
+                .into_response();
         }
-        Ok(None) => {
-            error!(id = ?session.id(), "No CSRF_STATE_KEY in session");
-            return StatusCode::BAD_REQUEST.into_response();
-        }
-        Ok(Some(state)) => state
     };
 
-    let Ok(Some(pkce_verifier)) = session.remove(PKCE_VERIFIER_KEY).await else {
-        error!(id = ?session.id(), "Couldn't get PKCE_VERIFIER_KEY from session");
-        return StatusCode::BAD_REQUEST.into_response();
+    let pkce_verifier = match jar.get(LOGIN_CSRF_COOKIE) {
+        Some(cookie) => match serde_json::from_str(cookie.value()) {
+            Err(_) => {
+                return (StatusCode::BAD_REQUEST, "Invalid pkce verifier cookie").into_response();
+            }
+            Ok(cookie) => cookie,
+        },
+        None => {
+            error!("User tried accessing redirect route without csrf cookie");
+            return (
+                StatusCode::BAD_REQUEST,
+                format!("Missing {LOGIN_CSRF_COOKIE} cookie"),
+            )
+                .into_response();
+        }
     };
 
-    let next_url: Option<String> = session.remove(NEXT_URL_KEY).await.ok().flatten();
+    let next_url = jar
+        .get(LOGIN_NEXT_URL_COOKIE)
+        .map(|cookie| cookie.value().to_string());
 
-    let AuthzResp { state: new_state, code } = query_params;
+    jar = jar
+        .remove(LOGIN_CSRF_COOKIE)
+        .remove(LOGIN_PKCE_COOKIE)
+        .remove(LOGIN_NEXT_URL_COOKIE);
 
-    let credentials = Credentials {
+    let AuthzResp {
+        state: new_state,
         code,
-        old_state,
-        new_state,
-        pkce_verifier
-    };
+    } = query_params;
 
-    let user = match auth_session.authenticate(credentials).await {
-        Ok(Some(user)) => user,
-        Ok(None) => {
-            return (StatusCode::UNAUTHORIZED, "Invalid token").into_response()
+    if old_state != *new_state.secret() {
+        return (StatusCode::BAD_REQUEST, jar, "csrf state doesn't match").into_response();
+    }
+
+    let token_response = auth_state
+        .oauth2_client
+        .exchange_code(AuthorizationCode::new(code))
+        .set_pkce_verifier(pkce_verifier)
+        .request_async(&auth_state.http_client)
+        .await;
+
+    let token_response = match token_response {
+        Err(err) => {
+            warn!(?err, "error while exchanging auth code");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                jar,
+                "Something went wrong trying to exchange auth code",
+            )
+                .into_response();
         }
-        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        Ok(token_response) => token_response,
     };
 
-    if auth_session.login(&user).await.is_err() {
-        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    let bearer = token_response.access_token().secret();
+    let refresh_token = token_response.refresh_token().map(|t| t.secret());
+
+    if refresh_token.is_none() {
+        warn!("Refresh token is none, activate refresh tokens for better security");
     }
 
-    if let Some(next_url) = next_url {
-        Redirect::to(&next_url).into_response()
-    } else {
-        Redirect::to("/").into_response()
+    // FIXME: Make the duration's here either configurable,
+    //        or extract them from the bearer/refresh JWT.
+    //        This doesn't make a difference to security,
+    //        as the tokens is checked on every request, but still.
+    jar = jar.add(new_secure_cookie(
+        BEARER_COOKIE_NAME,
+        bearer.clone(),
+        Duration::days(100),
+    ));
+
+    if let Some(refresh_token) = refresh_token {
+        jar = jar.add(new_secure_cookie(
+            REFRESH_COOKIE_NAME,
+            refresh_token.clone(),
+            Duration::days(365),
+        ));
     }
+
+    (jar, Redirect::to(&next_url.unwrap_or("/".to_string()))).into_response()
 }
 
-pub type Oauth2Client = BasicClient<EndpointSet, EndpointNotSet, EndpointNotSet, EndpointNotSet, EndpointSet>;
+pub type Oauth2Client =
+    BasicClient<EndpointSet, EndpointNotSet, EndpointNotSet, EndpointNotSet, EndpointSet>;
 
 #[derive(Clone)]
 pub struct AuthState {
     pub jwk_set: JwkSet,
     pub oauth2_client: Oauth2Client,
-    pub backend: backend::Backend,
     pub http_client: reqwest::Client,
 }
 
-pub async fn initialize_auth(config: &AppConfig, backend: backend::Backend) -> AuthState {
+pub async fn initialize_auth(config: &AppConfig) -> AuthState {
     let server_url = config.auth_server_url();
 
     let oauth2_client = BasicClient::new(ClientId::new(config.auth_client_id().to_string()))
         .set_auth_uri(AuthUrl::new(format!("{server_url}/protocol/openid-connect/auth")).unwrap())
-        .set_token_uri(TokenUrl::new(format!("{server_url}/protocol/openid-connect/token")).unwrap())
-        .set_redirect_uri(RedirectUrl::new(format!("{}/auth/redirect", config.base_url())).unwrap());
+        .set_token_uri(
+            TokenUrl::new(format!("{server_url}/protocol/openid-connect/token")).unwrap(),
+        )
+        .set_redirect_uri(
+            RedirectUrl::new(format!("{}/auth/redirect", config.base_url())).unwrap(),
+        );
 
     let jwk_certs_url = format!("{server_url}/protocol/openid-connect/certs");
 
     let jwk_set = reqwest::get(jwk_certs_url)
-        .await.unwrap()
-        .json().await
+        .await
+        .unwrap()
+        .json()
+        .await
         .unwrap();
 
     let http_client = reqwest::Client::builder()
@@ -155,15 +243,11 @@ pub async fn initialize_auth(config: &AppConfig, backend: backend::Backend) -> A
         .build()
         .expect("reqwest Client should build");
 
-    AuthState { jwk_set, oauth2_client, backend, http_client }
-}
-
-#[derive(Debug, Deserialize)]
-pub struct Credentials {
-    pub code: String,
-    pub old_state: CsrfToken,
-    pub new_state: CsrfToken,
-    pub pkce_verifier: PkceCodeVerifier
+    AuthState {
+        jwk_set,
+        oauth2_client,
+        http_client,
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -172,103 +256,92 @@ pub enum BackendError {
     Reqwest(#[from] reqwest::Error),
 
     #[error("OAuth2 error: {0}")]
-    OAuth2(#[from] RequestTokenError<HttpClientError<reqwest::Error>, StandardErrorResponse<BasicErrorResponseType>>),
+    OAuth2(
+        #[from]
+        RequestTokenError<
+            HttpClientError<reqwest::Error>,
+            StandardErrorResponse<BasicErrorResponseType>,
+        >,
+    ),
 
     #[error("DB error: {0}")]
     Diesel(#[from] diesel::result::Error),
 }
 
-#[async_trait]
-impl AuthnBackend for AuthState {
-    type User = User;
-    type Credentials = Credentials;
-    type Error = BackendError;
+pub async fn base(
+    State(auth_state): State<AuthState>,
+    mut request: Request,
+    next: Next,
+) -> impl IntoResponse {
+    let mut jar = CookieJar::from_headers(request.headers());
+    let jwt = jar.get(BEARER_COOKIE_NAME)
+        .map(|jwt| jwt.value().to_string());
+    let refresh = jar.get(REFRESH_COOKIE_NAME)
+        .map(|refresh| refresh.value().to_string());
 
-    async fn authenticate(
-        &self,
-        creds: Self::Credentials,
-    ) -> Result<Option<Self::User>, Self::Error> {
-        // Ensure the CSRF state has not been tampered with.
-        if creds.old_state.secret() != creds.new_state.secret() {
-            return Ok(None);
-        };
+    // Default context for unauthenticated requests
+    let mut user: Option<UserClaims> = None;
 
-        // Process authorization code, expecting a token response back.
-        let token_res = self
-            .oauth2_client
-            .exchange_code(AuthorizationCode::new(creds.code))
-            .set_pkce_verifier(creds.pkce_verifier)
-            .request_async(&self.http_client)
-            .await?;
-
-        let bearer = token_res.access_token().secret();
-
-        let user_claims = match check_bearer(&self.jwk_set, bearer) {
-            Ok(user_claims) => user_claims,
-            Err(err) => {
-                debug!("Error while checking JWT bearer: {err}");
-                return Ok(None);
+    // JWT takes precedence if present
+    // FIXME: If JWT is invalid (for example, expired), try to use
+    //        refresh token as fallback
+    if let Some(jwt) = jwt {
+        match check_bearer(&auth_state.jwk_set, &jwt) {
+            Ok(claims) => {
+                user = Some(claims);
             }
-        };
-
-        let db_user_session = UserSession {
-            id: user_claims.user_id,
-            access_token: bearer.clone()
-        };
-
-        {
-            let mut db_con = self.backend.db.lock().await;
-            use diesel::prelude::*;
-            use crate::schema::user_sessions;
-
-            db_user_session.insert_into(user_sessions::table)
-                .on_conflict(user_sessions::columns::id)
-                .do_update()
-                .set(user_sessions::columns::access_token.eq(bearer))
-                .execute(&mut *db_con)?;
+            Err(_) => {
+                // Clear potentially compromised cookies
+                jar = jar.remove(BEARER_COOKIE_NAME).remove(REFRESH_COOKIE_NAME);
+            }
         }
-
-        let user = User {
-            id: user_claims.user_id,
-            claims: user_claims,
-            access_token: bearer.clone(),
-        };
-
-        Ok(Some(user))
     }
 
-    async fn get_user(&self, user_id: &UserId<Self>) -> Result<Option<Self::User>, Self::Error> {
-        use diesel::prelude::*;
-        use crate::schema::user_sessions;
+    // Fall back to refresh token if JWT is absent/invalid
+    if user.is_none() {
+        if let Some(refresh) = refresh {
+            let refresh_token_response = auth_state
+                .oauth2_client
+                .exchange_refresh_token(&RefreshToken::new(refresh))
+                .request_async(&auth_state.http_client)
+                .await;
 
-        let mut db_con = self.backend.db.lock().await;
+            match refresh_token_response {
+                Err(err) => error!(?err, "Error while trying to exchange refresh token"),
+                Ok(refresh_token_response) => {
+                    let access_token = refresh_token_response.access_token();
 
-        let user_session = user_sessions::table.find(user_id)
-            .select(UserSession::as_select())
-            .first(&mut *db_con).optional()?;
+                    jar = jar.add(new_secure_cookie(
+                        BEARER_COOKIE_NAME,
+                        access_token.secret().to_string(),
+                        Duration::days(100),
+                    ));
 
-        if let Some(user_session) = user_session {
-            let UserSession { id, access_token } = user_session;
-
-            match check_bearer(&self.jwk_set, &access_token) {
-                Ok(claims) => Ok(Some(User {
-                    id,
-                    claims,
-                    access_token
-                })),
-                Err(err) => {
-                    debug!("Error while checking JWT bearer: {err}");
-                    return Ok(None);
+                    match check_bearer(&auth_state.jwk_set, access_token.secret()) {
+                        Ok(claims) => {
+                            user = Some(claims);
+                        }
+                        Err(_) => {
+                            // Clear potentially compromised cookies
+                            jar = jar.remove(BEARER_COOKIE_NAME).remove(REFRESH_COOKIE_NAME);
+                        }
+                    }
                 }
             }
-        } else {
-            Ok(None)
         }
     }
+
+    // Inject the resolved context into request extensions
+    request.extensions_mut().insert(user);
+
+    let response = next.run(request).await;
+
+    // Merge cookie updates with the response
+    (jar, response).into_response()
 }
 
-pub type AuthSession = axum_login::AuthSession<AuthState>;
-
+/// You can extract this from a request by using
+/// `Extension(user_claims): Extension<Option<UserClaims>>`
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UserClaims {
     #[serde(rename = "sub")]
@@ -298,35 +371,27 @@ impl std::fmt::Debug for User {
     }
 }
 
-impl AuthUser for User {
-    type Id = Uuid;
-
-    fn id(&self) -> Self::Id {
-        self.id
-    }
-
-    fn session_auth_hash(&self) -> &[u8] {
-        self.access_token.as_bytes()
-    }
-}
-
 const VALID_ALGORITHMS: &[Algorithm] = &[
-    Algorithm::RS256, Algorithm::RS384, Algorithm::RS512,
-    Algorithm::ES256, Algorithm::ES384,
-    Algorithm::PS256, Algorithm::PS384, Algorithm::PS512,
+    Algorithm::RS256,
+    Algorithm::RS384,
+    Algorithm::RS512,
+    Algorithm::ES256,
+    Algorithm::ES384,
+    Algorithm::PS256,
+    Algorithm::PS384,
+    Algorithm::PS512,
     Algorithm::EdDSA,
 ];
 
-pub fn check_bearer(jwk_set: &JwkSet, bearer_token: &str) -> Result<UserClaims, jsonwebtoken::errors::Error> {
-    let unverified_header =
-        jsonwebtoken::decode_header(bearer_token)?;
+pub fn check_bearer(
+    jwk_set: &JwkSet,
+    bearer_token: &str,
+) -> Result<UserClaims, jsonwebtoken::errors::Error> {
+    let unverified_header = jsonwebtoken::decode_header(bearer_token)?;
 
-    let kid = unverified_header.kid
-        .expect("Missing 'kid' claim");
+    let kid = unverified_header.kid.expect("Missing 'kid' claim");
 
-    let jwk = jwk_set
-        .find(&kid)
-        .expect("Invalid key id");
+    let jwk = jwk_set.find(&kid).expect("Invalid key id");
 
     let decoding_key = DecodingKey::from_jwk(jwk)?;
 
@@ -335,9 +400,9 @@ pub fn check_bearer(jwk_set: &JwkSet, bearer_token: &str) -> Result<UserClaims, 
     validation.set_audience(&["plantswap"]);
 
     debug!("Trying to verify JWT");
-    let verified_header = jsonwebtoken::decode(bearer_token, &decoding_key, &validation)?;
+    let verified_bearer = jsonwebtoken::decode(bearer_token, &decoding_key, &validation)?;
 
-    debug!("Auth successful with claims {:?}", verified_header.claims);
+    debug!("Auth successful with claims {:?}", verified_bearer.claims);
 
-    Ok(verified_header.claims)
+    Ok(verified_bearer.claims)
 }

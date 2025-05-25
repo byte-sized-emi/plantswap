@@ -1,18 +1,14 @@
 use askama::DynTemplate;
 use axum::{
-    extract::{Path, State}, http::StatusCode, response::{IntoResponse, Redirect}, routing::get, Router
+    extract::{Path, State}, http::StatusCode, middleware, response::{IntoResponse, Redirect}, routing::get, Extension, Router
 };
 use axum_htmx::HxRequest;
-use axum_login::login_required;
 use axum_typed_multipart::{FieldData, TryFromMultipart, TypedMultipart};
 use tracing::error;
 use uuid::Uuid;
 
 use crate::{
-    auth::{AuthSession, AuthState},
-    backend::{Backend, BackendError},
-    models::{InsertListing, ListingType},
-    AppState, LOGIN_URL,
+    auth::{layers::{require_login}, UserClaims}, backend::{Backend, BackendError}, models::{InsertListing, ListingType}, AppState
 };
 
 mod templates;
@@ -23,7 +19,7 @@ pub fn router() -> Router<AppState> {
             "/listing/new",
             get(render_create_listing).post(create_listing),
         )
-        .route_layer(login_required!(AuthState, login_url = LOGIN_URL))
+        .route_layer(require_login())
         .route(
             "/listing/:humanname/:id",
             get(show_listing).post(show_listing),
@@ -35,7 +31,7 @@ pub fn router() -> Router<AppState> {
 
 pub async fn fallback_handler(
     HxRequest(is_htmx): HxRequest,
-    auth_session: AuthSession,
+    Extension(auth_session): Extension<Option<UserClaims>>,
 ) -> (StatusCode, impl IntoResponse) {
     let page = templates::pages::Error404Page;
     let rendered_page = render_htmx_page(is_htmx, None, auth_session, Box::new(page));
@@ -66,7 +62,7 @@ mod components {
 fn render_htmx_page(
     is_htmx: bool,
     current_selection: Option<PageSelection>,
-    auth_session: AuthSession,
+    auth_session: Option<UserClaims>,
     page: Box<dyn DynTemplate>,
 ) -> impl IntoResponse {
     if is_htmx {
