@@ -10,6 +10,8 @@ use oauth2::{
     TokenResponse as _, TokenUrl,
     basic::{BasicClient, BasicErrorResponseType},
 };
+use openidconnect::{core::{CoreClient, CoreProviderMetadata}, ClientId, ClientSecret, IssuerUrl, RedirectUrl};
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use time::Duration;
 use tracing::{debug, error, info, warn};
@@ -20,6 +22,7 @@ use crate::{config::AppConfig, AppState};
 pub mod layers;
 
 const LOGIN_URL: &str = "/auth/login";
+const REDIRECT_URL: &str = "/auth/redirect";
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -207,41 +210,59 @@ async fn redirect_route(
     (jar, Redirect::to(&next_url.unwrap_or("/".to_string()))).into_response()
 }
 
-pub type Oauth2Client =
-    BasicClient<EndpointSet, EndpointNotSet, EndpointNotSet, EndpointNotSet, EndpointSet>;
+// pub type Oauth2Client =
+//     BasicClient<EndpointSet, EndpointNotSet, EndpointNotSet, EndpointNotSet, EndpointSet>;
 
 #[derive(Clone)]
 pub struct AuthState {
-    pub jwk_set: JwkSet,
+    // pub jwk_set: JwkSet,
     pub oauth2_client: Oauth2Client,
     pub http_client: reqwest::Client,
 }
 
 pub async fn initialize_auth(config: &AppConfig) -> AuthState {
-    let server_url = config.auth_server_url();
-
-    let oauth2_client = BasicClient::new(ClientId::new(config.auth_client_id().to_string()))
-        .set_auth_uri(AuthUrl::new(format!("{server_url}/protocol/openid-connect/auth")).unwrap())
-        .set_token_uri(
-            TokenUrl::new(format!("{server_url}/protocol/openid-connect/token")).unwrap(),
-        )
-        .set_redirect_uri(
-            RedirectUrl::new(format!("{}/auth/redirect", config.base_url())).unwrap(),
-        );
-
-    let jwk_certs_url = format!("{server_url}/protocol/openid-connect/certs");
-
-    let jwk_set = reqwest::get(jwk_certs_url)
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
-
     let http_client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .expect("reqwest Client should build");
+
+    let provider_metadata = CoreProviderMetadata::discover_async(
+        IssuerUrl::new(config.auth_server_url().to_string()).expect("Invalid issuer URL"),
+        &http_client,
+    ).await.expect("Couldn't discover OIDC metadata");
+
+    let redirect_url = RedirectUrl::new(format!("{}{REDIRECT_URL}", config.base_url()))
+        .unwrap();
+
+    let client = CoreClient::from_provider_metadata(
+        provider_metadata,
+        ClientId::new(config.auth_client_id().to_string()),
+        Some(ClientSecret::new(config.auth_client_secret().to_string()))
+    )
+    .set_redirect_uri(redirect_url);
+
+
+
+    // let server_url = config.auth_server_url();
+
+    // let oauth2_client = BasicClient::new(ClientId::new(config.auth_client_id().to_string()))
+    //     .set_auth_uri(AuthUrl::new(format!("{server_url}/protocol/openid-connect/auth")).unwrap())
+    //     .set_token_uri(
+    //         TokenUrl::new(format!("{server_url}/protocol/openid-connect/token")).unwrap(),
+    //     )
+    //     .set_redirect_uri(
+    //         RedirectUrl::new(format!("{}/auth/redirect", config.base_url())).unwrap(),
+    //     );
+
+    // let jwk_certs_url = format!("{server_url}/protocol/openid-connect/certs");
+
+    // let jwk_set = reqwest::get(jwk_certs_url)
+    //     .await
+    //     .unwrap()
+    //     .json()
+    //     .await
+    //     .unwrap();
+
 
     AuthState {
         jwk_set,
