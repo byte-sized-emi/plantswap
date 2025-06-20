@@ -4,10 +4,11 @@ use aws_config::{BehaviorVersion, meta::region::RegionProviderChain};
 use aws_sdk_s3::{config::Credentials, primitives::ByteStreamError};
 use bytes::Bytes;
 use diesel::prelude::*;
+use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use itertools::Itertools;
 use recognition::{PlantRecogniser, plantnet::PlantNetRecogniser};
 use tokio::sync::Mutex;
-use tracing::debug;
+use tracing::{debug, info};
 use uuid::Uuid;
 
 use crate::{config::AppConfig, models::*, schema::listings};
@@ -22,14 +23,21 @@ pub struct Backend<P: PlantRecogniser = PlantNetRecogniser> {
     pub plant_recognition: Arc<P>,
 }
 
+const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
+
 impl<P: PlantRecogniser> Backend<P> {
     pub async fn new(config: &AppConfig) -> Self {
-        let con = PgConnection::establish(config.database_url()).unwrap_or_else(|err| {
+        let mut con = PgConnection::establish(config.database_url()).unwrap_or_else(|err| {
             panic!(
                 "Error connecting to {}, error: {err}",
                 config.database_url()
             )
         });
+
+        if config.database_run_migrations() || cfg!(debug_assertions) {
+            info!("Running pending migrations");
+            con.run_pending_migrations(MIGRATIONS).unwrap();
+        }
 
         let db = Arc::new(Mutex::new(con));
 
@@ -280,7 +288,6 @@ mod tests {
     use std::{error::Error, sync::Arc};
 
     use diesel::{Connection as _, PgConnection};
-    use diesel_migrations::{EmbeddedMigrations, MigrationHarness as _, embed_migrations};
     use reqwest::Url;
     use tokio::sync::Mutex;
     use uuid::Uuid;
@@ -288,8 +295,6 @@ mod tests {
     use crate::models::{InsertListing, ListingType};
 
     use super::{Backend, create_s3_client, recognition::plantnet::PlantNetRecogniser};
-
-    const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
 
     async fn setup_test_backend() -> Backend {
         let db_con =
@@ -312,7 +317,6 @@ mod tests {
 
         {
             let mut con = backend.db.lock().await;
-            con.run_pending_migrations(MIGRATIONS).unwrap();
         }
 
         backend.delete_all().await.unwrap();

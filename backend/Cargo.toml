@@ -14,6 +14,7 @@ axum-htmx = "0.6.0"
 chrono = { version = "0.4.39", features = ["serde"] }
 config = "0.15.8"
 diesel = { version = "2.2.7", features = ["chrono", "postgres", "uuid"] }
+diesel_migrations = { version = "2.2.0", features = ["postgres"] }
 dotenvy = "0.15.7"
 jsonwebtoken = "9.3.1"
 openidconnect = { version = "4.0.0", features = ["timing-resistant-secret-traits"]}
@@ -24,7 +25,7 @@ serde_json = "1.0"
 thiserror = "2.0.11"
 tokio = { version = "1.43.0", features = ["full"] }
 futures = "0.3.31"
-tower-http = { version = "0.6.2", features = ["limit", "compression-full", "fs", "trace", "util", "decompression-full"] }
+tower-http = { version = "0.6.2", features = ["limit", "compression-full", "fs", "trace", "util", "decompression-full", "catch-panic", "request-id", "sensitive-headers"] }
 tower = "0.5.2"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
@@ -37,5 +38,3 @@ askama = { version = "0.12.1", features = ["with-axum"] }
 postgis_diesel = { version = "2.4.1", features = ["serde"] }
 async-trait = "0.1.86"
 
-[dev-dependencies]
-diesel_migrations = { version = "2.2.0", features = ["postgres"] }

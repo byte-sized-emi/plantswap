@@ -207,7 +207,8 @@ async fn redirect_route(
     };
 
     let access_token = token_response.access_token();
-    let id_token = token_response.id_token().unwrap();
+    let id_token = token_response.id_token()
+        .expect("Server didn't supply id_token");
     let refresh_token = token_response.refresh_token();
 
     if refresh_token.is_none() {
@@ -215,9 +216,19 @@ async fn redirect_route(
     }
 
     let id_token_verifier = auth_state.client.id_token_verifier();
-    let claims = id_token
-        .claims(&id_token_verifier, &login_cookie.nonce)
-        .unwrap();
+    let maybe_claims = id_token
+        .claims(&id_token_verifier, &login_cookie.nonce);
+
+    let claims = match maybe_claims {
+        Ok(claims) => claims,
+        Err(err) => {
+            warn!(?err, "Newly requested claims aren't valid");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Newly requested claims on id token aren't valid"
+            ).into_response();
+        }
+    };
 
     if let Some(expected_access_token_hash) = claims.access_token_hash() {
         let actual_access_token_hash = AccessTokenHash::from_token(
@@ -288,8 +299,8 @@ pub async fn initialize_auth(config: &AppConfig) -> AuthState {
         IssuerUrl::new(config.auth_server_url().to_string()).expect("Invalid issuer URL"),
         &http_client,
     )
-    .await
-    .expect("Couldn't discover OIDC metadata");
+        .await
+        .expect("Couldn't discover OIDC metadata");
 
     // we can't use the jwk's that the openidconnect crate gives us,
     // so we convert them to the jsonwebtoken one
@@ -312,13 +323,15 @@ pub async fn initialize_auth(config: &AppConfig) -> AuthState {
     }
 }
 
+pub type Result<T> = std::result::Result<T, BackendError>;
+
 #[derive(Debug, thiserror::Error)]
 pub enum BackendError {
     #[error("Error with HTTP request: {0}")]
     Reqwest(#[from] reqwest::Error),
 
-    #[error("OAuth2 error: {0}")]
-    OAuth2(
+    #[error("OIDC error: {0}")]
+    Oidc(
         #[from]
         RequestTokenError<
             HttpClientError<reqwest::Error>,
@@ -326,15 +339,45 @@ pub enum BackendError {
         >,
     ),
 
+    #[error("OIDC Configuration error: {0}")]
+    OidcConfiguration(
+        #[from] openidconnect::ConfigurationError
+    ),
+
     #[error("DB error: {0}")]
     Diesel(#[from] diesel::result::Error),
+
+    #[error("Error during JWT validation: {0}")]
+    Jwt(#[from] jsonwebtoken::errors::Error),
+
+    #[error("Missing or invalid 'kid' claim on JWT")]
+    MissingOrInvalidKidClaim,
+}
+
+impl IntoResponse for BackendError {
+    fn into_response(self) -> askama_axum::Response {
+        use BackendError::*;
+        let status_code = match self {
+            Jwt(_)
+            | MissingOrInvalidKidClaim => StatusCode::BAD_REQUEST,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+
+        let body = if status_code == StatusCode::INTERNAL_SERVER_ERROR {
+            "Internal server error, check logs for details".to_string()
+        } else {
+            format!("{self:?}")
+        };
+
+        (status_code, body).into_response()
+    }
 }
 
 pub async fn base(
     State(auth_state): State<AuthState>,
     mut request: Request,
     next: Next,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse> {
     let mut jar = CookieJar::from_headers(request.headers());
     let jwt = jar
         .get(BEARER_COOKIE_NAME)
@@ -365,15 +408,18 @@ pub async fn base(
         if let Some(refresh) = refresh {
             let refresh_token_response = auth_state
                 .client
-                .exchange_refresh_token(&RefreshToken::new(refresh))
-                .unwrap()
+                .exchange_refresh_token(&RefreshToken::new(refresh))?
                 .request_async(&auth_state.http_client)
                 .await;
 
             match refresh_token_response {
-                Err(err) => error!(?err, "Error while trying to exchange refresh token"),
-                Ok(refresh_token_response) => {
-                    let access_token = refresh_token_response.access_token();
+                Err(err) => {
+                    warn!(?err, "Error while trying to exchange refresh token");
+                    // Clear potentially compromised cookies
+                    jar = jar.remove(REFRESH_COOKIE_NAME);
+                }
+                Ok(response) => {
+                    let access_token = response.access_token();
 
                     jar = jar.add(new_secure_cookie(
                         BEARER_COOKIE_NAME,
@@ -392,8 +438,8 @@ pub async fn base(
                             jar = jar.remove(BEARER_COOKIE_NAME).remove(REFRESH_COOKIE_NAME);
                         }
                     }
-                }
-            }
+                },
+            };
         }
     }
 
@@ -403,7 +449,7 @@ pub async fn base(
     let response = next.run(request).await;
 
     // Merge cookie updates with the response
-    (jar, response).into_response()
+    Ok((jar, response).into_response())
 }
 
 /// You can extract this from a request by using
@@ -440,12 +486,14 @@ impl std::fmt::Debug for User {
 pub fn check_bearer(
     jwk_set: &JwkSet,
     bearer_token: &str,
-) -> Result<UserClaims, jsonwebtoken::errors::Error> {
+) -> Result<UserClaims> {
     let unverified_header = jsonwebtoken::decode_header(bearer_token)?;
 
-    let kid = unverified_header.kid.expect("Missing 'kid' claim");
+    let kid = unverified_header.kid
+        .ok_or(BackendError::MissingOrInvalidKidClaim)?;
 
-    let jwk = jwk_set.find(&kid).expect("Invalid key id");
+    let jwk = jwk_set.find(&kid)
+        .ok_or(BackendError::MissingOrInvalidKidClaim)?;
 
     let key_alg_name = jwk.common.key_algorithm.expect("JWK has no algorithm").to_string();
     let alg = Algorithm::from_str(&key_alg_name).unwrap();

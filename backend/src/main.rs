@@ -1,14 +1,15 @@
 use std::sync::Arc;
 
 use auth::{AuthState, initialize_auth};
-use axum::{Router, extract::FromRef, middleware, response::Redirect, routing::get};
+use axum::{extract::FromRef, http::HeaderName, middleware, response::Redirect, routing::get, Router};
 use backend::Backend;
 use config::AppConfig;
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
-use tower_http::{ServiceBuilderExt, services::ServeDir};
+use tower_http::{request_id::{MakeRequestId, RequestId}, services::ServeDir, ServiceBuilderExt};
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
+use uuid::Uuid;
 
 mod auth;
 mod backend;
@@ -34,7 +35,7 @@ async fn main() {
         .with_env_filter(EnvFilter::from_env("PLANTS_LOG"))
         .init();
 
-    let config = AppConfig::new();
+    let config = Arc::new(AppConfig::new());
 
     let backend = Backend::new(&config).await;
 
@@ -43,7 +44,7 @@ async fn main() {
     let global_state = AppState {
         backend,
         auth_state: auth_state.clone(),
-        config: Arc::new(config),
+        config: config.clone(),
     };
 
     let app = Router::new()
@@ -58,9 +59,13 @@ async fn main() {
         .layer(middleware::from_fn_with_state(auth_state, auth::base))
         .layer(
             ServiceBuilder::new()
+                .request_body_limit(10 * 1024 * 1024 /* 10MiB */)
+                .sensitive_headers([HeaderName::from_static("authorization")])
                 .compression()
                 .decompression()
-                .request_body_limit(10 * 1024 * 1024 /* 10MB */)
+                .catch_panic()
+                .set_x_request_id(UuidRequestId)
+                .propagate_x_request_id()
                 .trace_for_http(),
         );
 
@@ -70,12 +75,22 @@ async fn main() {
     #[cfg(not(debug_assertions))]
     let socket_address = "0.0.0.0:3000";
 
-    info!("Listening on http://{socket_address}/");
+    info!("Listening on http://{socket_address}/, server is accessible under {}", config.base_url());
 
     let listener = TcpListener::bind(socket_address).await.unwrap();
 
     #[cfg(debug_assertions)]
-    warn!("Running in debug mode (non-secure auth cookies, e.g.)");
+    warn!("Running in debug mode");
 
     axum::serve(listener, app).await.unwrap();
+}
+
+#[derive(Clone)]
+struct UuidRequestId;
+
+impl MakeRequestId for UuidRequestId {
+    fn make_request_id<B>(&mut self, _: &axum::http::Request<B>) -> Option<tower_http::request_id::RequestId> {
+        let uuid = Uuid::new_v4().to_string();
+        Some(RequestId::new(uuid.parse().unwrap()))
+    }
 }

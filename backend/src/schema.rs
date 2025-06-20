@@ -82,17 +82,6 @@ diesel::table! {
     use diesel::sql_types::*;
     use postgis_diesel::sql_types::*;
 
-    user_sessions (id) {
-        id -> Uuid,
-        #[max_length = 10240]
-        access_token -> Varchar,
-    }
-}
-
-diesel::table! {
-    use diesel::sql_types::*;
-    use postgis_diesel::sql_types::*;
-
     users (id) {
         id -> Uuid,
         location -> Nullable<Geography>,
@@ -108,6 +97,5 @@ diesel::allow_tables_to_appear_in_same_query!(
     listings,
     plants,
     spatial_ref_sys,
-    user_sessions,
     users,
 );

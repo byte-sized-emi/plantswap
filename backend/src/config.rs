@@ -5,6 +5,8 @@ use serde::Deserialize;
 pub struct AppConfig {
     base_url: String,
     database_url: String,
+    #[serde(default)]
+    database_run_migrations: bool,
     s3_endpoint: String,
     s3_access_key: String,
     s3_secret_key: String,
@@ -36,6 +38,10 @@ impl AppConfig {
 
     pub fn database_url(&self) -> &str {
         &self.database_url
+    }
+
+    pub fn database_run_migrations(&self) -> bool {
+        self.database_run_migrations
     }
 
     pub fn s3_endpoint(&self) -> &str {
