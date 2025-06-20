@@ -1,12 +1,14 @@
 use axum::{
-    body::Body, http::{Request as HttpRequest, Response}, response::{IntoResponse, Redirect}
+    body::Body,
+    http::{Request as HttpRequest, Response},
+    response::{IntoResponse, Redirect},
 };
-use std::task::{Context, Poll};
 use std::future::Future;
 use std::pin::Pin;
+use std::task::{Context, Poll};
 use tower::{Layer, Service};
 
-use super::{UserClaims, LOGIN_URL};
+use super::{LOGIN_URL, UserClaims};
 
 /// Convenience function that calls `RequireLogin::new()`.
 /// This creates a layer which requires users to be logged in,
@@ -34,9 +36,7 @@ impl<S> Layer<S> for RequireLogin {
     type Service = RequireLoginMiddleware<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        RequireLoginMiddleware {
-            inner
-        }
+        RequireLoginMiddleware { inner }
     }
 }
 
@@ -79,5 +79,3 @@ where
         })
     }
 }
-
-

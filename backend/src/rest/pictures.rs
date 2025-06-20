@@ -1,17 +1,17 @@
 use axum::extract::Path;
-use axum::http::{header, StatusCode};
+use axum::http::{StatusCode, header};
 use axum::response::IntoResponse;
 use axum::routing::{delete, get, post};
 use axum::{Extension, Json};
-use axum::{extract::State, Router};
+use axum::{Router, extract::State};
 use axum_typed_multipart::{FieldData, TryFromMultipart, TypedMultipart};
 use serde::Serialize;
 use tracing::{error, warn};
 use uuid::Uuid;
 
-use crate::auth::layers::require_login;
 use crate::auth::UserClaims;
-use crate::{backend::Backend, AppState};
+use crate::auth::layers::require_login;
+use crate::{AppState, backend::Backend};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -19,7 +19,6 @@ pub fn router() -> Router<AppState> {
         .route("/:id", delete(remove_picture))
         .route_layer(require_login())
         .route("/:id", get(get_picture))
-
 }
 
 #[derive(TryFromMultipart)]
@@ -30,19 +29,17 @@ struct PictureUpload {
 
 #[derive(Serialize)]
 struct PictureUploadResponse {
-    pub id: Uuid
+    pub id: Uuid,
 }
 
 async fn upload_picture(
     Extension(user_claims): Extension<UserClaims>,
     State(backend): State<Backend>,
-    TypedMultipart(picture_upload): TypedMultipart<PictureUpload>
+    TypedMultipart(picture_upload): TypedMultipart<PictureUpload>,
 ) -> impl IntoResponse {
     let picture = picture_upload.picture;
 
-    let content_type = picture.metadata.content_type
-        .as_ref()
-        .map(|f| f.as_ref());
+    let content_type = picture.metadata.content_type.as_ref().map(|f| f.as_ref());
     if content_type != Some("image/jpeg") && content_type != Some("image/png") {
         return (StatusCode::UNSUPPORTED_MEDIA_TYPE,
             format!("Media type \"{content_type:?}\" is not supported, use \"image/png\" or \"image/jpeg\""))
@@ -52,41 +49,36 @@ async fn upload_picture(
     let user_id = user_claims.user_id;
 
     match backend.upload_image(user_id, picture.contents).await {
-        Ok(id) => {
-            (
-                StatusCode::CREATED,
-                Json(PictureUploadResponse { id })
-            ).into_response()
-        }
+        Ok(id) => (StatusCode::CREATED, Json(PictureUploadResponse { id })).into_response(),
         Err(err) => {
             error!(?err, "Couldn't upload image");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Couldn't upload image"
-            ).into_response()
+            (StatusCode::INTERNAL_SERVER_ERROR, "Couldn't upload image").into_response()
         }
     }
 }
 
-async fn get_picture(
-    State(backend): State<Backend>,
-    Path(id): Path<Uuid>,
-) -> impl IntoResponse {
+async fn get_picture(State(backend): State<Backend>, Path(id): Path<Uuid>) -> impl IntoResponse {
     match backend.get_image(id).await {
-        Err(err) =>{
+        Err(err) => {
             warn!(?err, image_id = ?id, "Error while trying to download image");
-            (StatusCode::INTERNAL_SERVER_ERROR, "Error occured trying to download image from S3")
-            .into_response()
-        },
-        Ok(Some(bytes)) =>
-            ([
-                (header::CACHE_CONTROL, "public, max-age=604800, immutable".to_string()),
-                (header::CONTENT_TYPE, bytes.0)
-                ], bytes.1)
-                .into_response(),
-        Ok(None) =>
-            (StatusCode::NOT_FOUND, "Couldn't find this image")
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Error occured trying to download image from S3",
+            )
                 .into_response()
+        }
+        Ok(Some(bytes)) => (
+            [
+                (
+                    header::CACHE_CONTROL,
+                    "public, max-age=604800, immutable".to_string(),
+                ),
+                (header::CONTENT_TYPE, bytes.0),
+            ],
+            bytes.1,
+        )
+            .into_response(),
+        Ok(None) => (StatusCode::NOT_FOUND, "Couldn't find this image").into_response(),
     }
 }
 

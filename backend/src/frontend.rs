@@ -1,6 +1,10 @@
 use askama::DynTemplate;
 use axum::{
-    extract::{Path, State}, http::StatusCode, response::{IntoResponse, Redirect}, routing::get, Extension, Router
+    Extension, Router,
+    extract::{Path, State},
+    http::StatusCode,
+    response::{IntoResponse, Redirect},
+    routing::get,
 };
 use axum_htmx::HxRequest;
 use axum_typed_multipart::{FieldData, TryFromMultipart, TypedMultipart};
@@ -8,7 +12,10 @@ use tracing::error;
 use uuid::Uuid;
 
 use crate::{
-    auth::{layers::{require_login}, UserClaims}, backend::{Backend, BackendError}, models::{InsertListing, ListingType}, AppState
+    AppState,
+    auth::{UserClaims, layers::require_login},
+    backend::{Backend, BackendError},
+    models::{InsertListing, ListingType},
 };
 
 mod templates;
@@ -133,18 +140,18 @@ async fn create_listing(
     let author = auth_session.user_id;
 
     if body.pictures.is_empty() {
-        let page = templates::pages::CreateListing::with_error("You need to upload at least one image");
+        let page =
+            templates::pages::CreateListing::with_error("You need to upload at least one image");
         return render_htmx_page(true, None, Some(auth_session), Box::new(page)).into_response();
     }
 
     for picture in &body.pictures {
-        let content_type = picture.metadata.content_type
-            .as_ref()
-            .map(|f| f.as_ref());
+        let content_type = picture.metadata.content_type.as_ref().map(|f| f.as_ref());
         if content_type != Some("image/jpeg") && content_type != Some("image/png") {
             error!(?content_type, "Invalid content type");
             let page = templates::pages::CreateListing::with_error("Invalid image type");
-            return render_htmx_page(true, None, Some(auth_session), Box::new(page)).into_response();
+            return render_htmx_page(true, None, Some(auth_session), Box::new(page))
+                .into_response();
         }
     }
 
@@ -161,7 +168,8 @@ async fn create_listing(
             Err(err) => {
                 error!(?err, "Error while uploading image");
                 let page = templates::pages::CreateListing::with_error("Internal server error");
-                return render_htmx_page(true, None, Some(auth_session), Box::new(page)).into_response();
+                return render_htmx_page(true, None, Some(auth_session), Box::new(page))
+                    .into_response();
             }
         }
     }
@@ -180,13 +188,15 @@ async fn create_listing(
         }
         Err(BackendError::ListingHasNoLocation) => {
             let page = templates::pages::CreateListing::with_error(
-                "Your account needs to have a location set in order to create a listing"
+                "Your account needs to have a location set in order to create a listing",
             );
             render_htmx_page(true, None, Some(auth_session), Box::new(page)).into_response()
         }
         Err(err) => {
             error!(?err, "Database error while creating listing");
-            let page = templates::pages::CreateListing::with_error("Internal server error, try again later");
+            let page = templates::pages::CreateListing::with_error(
+                "Internal server error, try again later",
+            );
             render_htmx_page(true, None, Some(auth_session), Box::new(page)).into_response()
         }
     }

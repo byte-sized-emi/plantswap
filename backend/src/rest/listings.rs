@@ -1,18 +1,31 @@
-use axum::{extract::{Path, State}, http::StatusCode, routing::{get, post, put}, Extension, Json, Router};
+use axum::response::IntoResponse;
+use axum::{
+    Extension, Json, Router,
+    extract::{Path, State},
+    http::StatusCode,
+    routing::{get, post, put},
+};
 use serde::Deserialize;
 use tracing::error;
 use uuid::Uuid;
-use axum::response::IntoResponse;
 
-use crate::{auth::{layers::require_login, UserClaims}, backend::Backend, models::{InsertListing, ListingType, ListingUpdate}, AppState};
+use crate::{
+    AppState,
+    auth::{UserClaims, layers::require_login},
+    backend::Backend,
+    models::{InsertListing, ListingType, ListingUpdate},
+};
 
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", post(create_listing))
-        .route("/:id", put(update_listing)
-            .patch(update_listing).delete(delete_listing))
+        .route(
+            "/:id",
+            put(update_listing)
+                .patch(update_listing)
+                .delete(delete_listing),
+        )
         .route_layer(require_login())
-
         .route("/", get(get_all_listings))
         .route("/:id", get(get_listing))
 }
@@ -29,12 +42,13 @@ struct InsertListingBody {
 
 impl InsertListingBody {
     pub fn into_insert_listing(self, author: Uuid) -> InsertListing {
-        InsertListing { title: self.title,
+        InsertListing {
+            title: self.title,
             description: self.description,
             author,
             listing_type: self.listing_type,
             tradeable: Some(self.tradeable),
-            thumbnail: self.thumbnail
+            thumbnail: self.thumbnail,
         }
     }
 }
@@ -42,14 +56,18 @@ impl InsertListingBody {
 async fn create_listing(
     Extension(auth_session): Extension<UserClaims>,
     State(backend): State<Backend>,
-    Json(body): Json<InsertListingBody>
+    Json(body): Json<InsertListingBody>,
 ) -> impl IntoResponse {
     if body.pictures.is_empty() {
         return (StatusCode::BAD_REQUEST, "Pictures are required").into_response();
     }
 
     if !body.pictures.contains(&body.thumbnail) {
-        return (StatusCode::BAD_REQUEST, "Thumbnail is not in the pictures supplied").into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            "Thumbnail is not in the pictures supplied",
+        )
+            .into_response();
     }
 
     let author_id = auth_session.user_id;
@@ -57,46 +75,42 @@ async fn create_listing(
     let insert_listing = body.into_insert_listing(author_id);
 
     match backend.create_listing(insert_listing).await {
-        Ok(listing) => {
-            (StatusCode::CREATED, Json(listing)).into_response()
-        }
+        Ok(listing) => (StatusCode::CREATED, Json(listing)).into_response(),
         Err(err) => {
             error!(?err, "Database error while creating listing");
-            (StatusCode::INTERNAL_SERVER_ERROR, "Error while creating listing").into_response()
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Error while creating listing",
+            )
+                .into_response()
         }
     }
 }
 
-async fn get_all_listings(
-    State(backend): State<Backend>
-) -> impl IntoResponse {
+async fn get_all_listings(State(backend): State<Backend>) -> impl IntoResponse {
     match backend.get_all_listings().await {
-        Ok(listings) => {
-            Json(listings).into_response()
-        }
+        Ok(listings) => Json(listings).into_response(),
         Err(err) => {
             error!(?err, "Error while getting all listings");
-            (StatusCode::INTERNAL_SERVER_ERROR, "Error while getting all listings")
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Error while getting all listings",
+            )
                 .into_response()
         }
     }
 }
 
-async fn get_listing(
-    State(backend): State<Backend>,
-    Path(id): Path<Uuid>,
-) -> impl IntoResponse {
+async fn get_listing(State(backend): State<Backend>, Path(id): Path<Uuid>) -> impl IntoResponse {
     match backend.get_listing(id).await {
-        Ok(Some(listing)) => {
-            (StatusCode::OK, Json(listing))
-                .into_response()
-        }
-        Ok(None) => {
-            StatusCode::NO_CONTENT.into_response()
-        }
+        Ok(Some(listing)) => (StatusCode::OK, Json(listing)).into_response(),
+        Ok(None) => StatusCode::NO_CONTENT.into_response(),
         Err(err) => {
             error!(?err, ?id, "Error while getting listing");
-            (StatusCode::INTERNAL_SERVER_ERROR, "Error while getting listing")
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Error while getting listing",
+            )
                 .into_response()
         }
     }
@@ -110,31 +124,23 @@ async fn update_listing(
     listing_update.id = Some(id);
 
     match backend.update_listing(&listing_update).await {
-        Ok(Some(listing)) => {
-            (StatusCode::ACCEPTED, Json(listing)).into_response()
-        }
-        Ok(None) => {
-            (StatusCode::BAD_REQUEST, "Invalid ID").into_response()
-        }
+        Ok(Some(listing)) => (StatusCode::ACCEPTED, Json(listing)).into_response(),
+        Ok(None) => (StatusCode::BAD_REQUEST, "Invalid ID").into_response(),
         Err(err) => {
-            error!(?err, ?listing_update, "Database error while trying to update listing");
+            error!(
+                ?err,
+                ?listing_update,
+                "Database error while trying to update listing"
+            );
             (StatusCode::INTERNAL_SERVER_ERROR, "Database error").into_response()
         }
     }
 }
 
-async fn delete_listing(
-    State(backend): State<Backend>,
-    Path(id): Path<Uuid>,
-)
--> impl IntoResponse {
+async fn delete_listing(State(backend): State<Backend>, Path(id): Path<Uuid>) -> impl IntoResponse {
     match backend.delete_listing(id).await {
-        Ok(Some(listing)) => {
-            (StatusCode::OK, Json(listing)).into_response()
-        }
-        Ok(None) => {
-            (StatusCode::BAD_REQUEST, "Invalid ID").into_response()
-        }
+        Ok(Some(listing)) => (StatusCode::OK, Json(listing)).into_response(),
+        Ok(None) => (StatusCode::BAD_REQUEST, "Invalid ID").into_response(),
         Err(err) => {
             error!(?err, ?id, "Database error while trying to update listing");
             (StatusCode::INTERNAL_SERVER_ERROR, "Database error").into_response()

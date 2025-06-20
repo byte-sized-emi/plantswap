@@ -1,22 +1,22 @@
 use std::sync::Arc;
 
-use auth::{initialize_auth, AuthState};
-use axum::{extract::FromRef, middleware, response::Redirect, routing::get, Router};
+use auth::{AuthState, initialize_auth};
+use axum::{Router, extract::FromRef, middleware, response::Redirect, routing::get};
 use backend::Backend;
 use config::AppConfig;
-use tower_http::{services::ServeDir, ServiceBuilderExt};
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
+use tower_http::{ServiceBuilderExt, services::ServeDir};
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
-mod frontend;
-mod backend;
-mod models;
-mod schema;
-mod config;
 mod auth;
+mod backend;
+mod config;
+mod frontend;
+mod models;
 mod rest;
+mod schema;
 
 #[derive(Clone, FromRef)]
 struct AppState {
@@ -43,7 +43,7 @@ async fn main() {
     let global_state = AppState {
         backend,
         auth_state: auth_state.clone(),
-        config: Arc::new(config)
+        config: Arc::new(config),
     };
 
     let app = Router::new()
@@ -61,7 +61,7 @@ async fn main() {
                 .compression()
                 .decompression()
                 .request_body_limit(10 * 1024 * 1024 /* 10MB */)
-                .trace_for_http()
+                .trace_for_http(),
         );
 
     #[cfg(debug_assertions)]

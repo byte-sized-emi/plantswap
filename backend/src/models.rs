@@ -1,12 +1,20 @@
-use core::str;
-use std::io::Write;
 use axum_typed_multipart::TryFromField;
-use diesel::{deserialize::{self, FromSql, FromSqlRow}, expression::AsExpression, pg::{Pg, PgValue}, prelude::*, serialize::{self, IsNull, Output, ToSql}};
+use core::str;
+use diesel::{
+    deserialize::{self, FromSql, FromSqlRow},
+    expression::AsExpression,
+    pg::{Pg, PgValue},
+    prelude::*,
+    serialize::{self, IsNull, Output, ToSql},
+};
 use postgis_diesel::types::Point;
-use uuid::Uuid;
 use serde::{Deserialize, Serialize};
+use std::io::Write;
+use uuid::Uuid;
 
-#[derive(Debug, PartialEq, Eq, FromSqlRow, AsExpression, Serialize, Deserialize, TryFromField, Clone)]
+#[derive(
+    Debug, PartialEq, Eq, FromSqlRow, AsExpression, Serialize, Deserialize, TryFromField, Clone,
+)]
 #[diesel(sql_type = crate::schema::sql_types::ListingType)]
 pub enum ListingType {
     Selling,
@@ -25,8 +33,7 @@ impl ToSql<crate::schema::sql_types::ListingType, Pg> for ListingType {
 
 impl FromSql<crate::schema::sql_types::ListingType, Pg> for ListingType {
     fn from_sql(bytes: PgValue<'_>) -> deserialize::Result<Self> {
-        let string = str::from_utf8(bytes.as_bytes())
-            .map_err(|_| "Unrecognized enum variant")?;
+        let string = str::from_utf8(bytes.as_bytes()).map_err(|_| "Unrecognized enum variant")?;
 
         if string.eq_ignore_ascii_case("buying") {
             Ok(ListingType::Buying)
@@ -81,10 +88,20 @@ pub struct InsertListing {
     pub author: Uuid,
     pub listing_type: ListingType,
     pub tradeable: Option<bool>,
-    pub thumbnail: Uuid
+    pub thumbnail: Uuid,
 }
 
-#[derive(Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(
+    Queryable,
+    Selectable,
+    Identifiable,
+    Associations,
+    Serialize,
+    Deserialize,
+    Debug,
+    PartialEq,
+    Clone,
+)]
 #[diesel(table_name = crate::schema::listings)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 #[diesel(belongs_to(Image, foreign_key = thumbnail))]

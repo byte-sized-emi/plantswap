@@ -1,23 +1,29 @@
+use std::str::FromStr as _;
+
 use axum::{
-    extract::{Query, Request, State}, http::StatusCode, middleware::Next, response::{IntoResponse, Redirect}, routing::get, Extension, Router
+    Extension, Router,
+    extract::{Query, Request, State},
+    http::StatusCode,
+    middleware::Next,
+    response::{IntoResponse, Redirect},
+    routing::get,
 };
-use axum_extra::extract::{CookieJar, cookie::Cookie};
+use axum_extra::extract::{cookie::{Cookie, SameSite}, CookieJar};
 use axum_htmx::HxRequest;
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, jwk::JwkSet};
-use oauth2::{
-    AuthUrl, AuthorizationCode, ClientId, CsrfToken, EndpointNotSet, EndpointSet, HttpClientError,
-    PkceCodeChallenge, RedirectUrl, RefreshToken, RequestTokenError, StandardErrorResponse,
-    TokenResponse as _, TokenUrl,
-    basic::{BasicClient, BasicErrorResponseType},
+use openidconnect::{
+    AccessTokenHash, AuthorizationCode, ClientId, ClientSecret, CsrfToken, EndpointMaybeSet,
+    EndpointNotSet, EndpointSet, HttpClientError, IssuerUrl, Nonce, OAuth2TokenResponse,
+    PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, RefreshToken, RequestTokenError,
+    StandardErrorResponse, TokenResponse,
+    core::{CoreAuthenticationFlow, CoreClient, CoreErrorResponseType, CoreProviderMetadata},
 };
-use openidconnect::{core::{CoreClient, CoreProviderMetadata}, ClientId, ClientSecret, IssuerUrl, RedirectUrl};
-use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use time::Duration;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use crate::{config::AppConfig, AppState};
+use crate::{AppState, config::AppConfig};
 
 pub mod layers;
 
@@ -33,12 +39,25 @@ pub fn router() -> Router<AppState> {
 const BEARER_COOKIE_NAME: &str = "bearer";
 const REFRESH_COOKIE_NAME: &str = "refresh";
 
-const LOGIN_CSRF_COOKIE: &str = "login_csrf";
-const LOGIN_PKCE_COOKIE: &str = "login_pkce";
-const LOGIN_NEXT_URL_COOKIE: &str = "login_next_url";
+const LOGIN_STATE_COOKIE: &str = "login_state";
+
+/// This struct is serialized using json then sent to the user during
+/// the login process. Because this is a cookie, it cannot be more than
+/// 4KiB in size...it shouldn't, tho. unless the next_url is really really large.
+#[derive(Deserialize, Serialize)]
+struct LoginCookie {
+    #[serde(rename = "csrf")]
+    pub csrf_token: CsrfToken,
+    #[serde(rename = "pkce")]
+    pub pkce_verifier: PkceCodeVerifier,
+    pub nonce: Nonce,
+    #[serde(rename = "next")]
+    #[serde(default)]
+    pub next_url: Option<String>,
+}
 
 #[derive(Deserialize)]
-struct NextUrl {
+struct NextUrlQuery {
     #[serde(default)]
     pub next: Option<String>,
 }
@@ -47,35 +66,36 @@ async fn login_route(
     State(auth_state): State<AuthState>,
     mut jar: CookieJar,
     HxRequest(is_htmx): HxRequest,
-    Query(next_url): Query<NextUrl>,
+    Query(next_url): Query<NextUrlQuery>,
 ) -> impl IntoResponse {
     let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
 
     // Generate the full authorization URL.
-    let (auth_url, csrf_token) = auth_state
-        .oauth2_client
-        .authorize_url(CsrfToken::new_random)
+    let (auth_url, csrf_token, nonce) = auth_state
+        .client
+        .authorize_url(
+            CoreAuthenticationFlow::AuthorizationCode,
+            CsrfToken::new_random,
+            Nonce::new_random,
+        )
         // Set the desired scopes.
         // .add_scope(Scope::new("read".to_string()))
         // .add_scope(Scope::new("write".to_string()))
         .set_pkce_challenge(pkce_challenge)
         .url();
 
-    jar = jar
-        .add(new_secure_cookie(
-            LOGIN_CSRF_COOKIE,
-            csrf_token.secret().clone(),
-            Duration::minutes(10),
-        ))
-        .add(new_secure_cookie(
-            LOGIN_PKCE_COOKIE,
-            serde_json::to_string(&pkce_verifier).unwrap(),
-            Duration::minutes(10),
-        ));
+    let login_cookie = LoginCookie {
+        csrf_token,
+        pkce_verifier,
+        nonce,
+        next_url: next_url.next,
+    };
 
-    if let Some(next_url) = next_url.next {
-        jar = jar.add(Cookie::new(LOGIN_NEXT_URL_COOKIE, next_url));
-    }
+    jar = jar.add(new_secure_cookie(
+        LOGIN_STATE_COOKIE,
+        serde_json::to_string(&login_cookie).unwrap(),
+        Duration::minutes(10),
+    ));
 
     info!("Sending user to auth url");
 
@@ -91,6 +111,8 @@ fn new_secure_cookie(name: &'static str, value: String, max_age: Duration) -> Co
         .http_only(true)
         .secure(true)
         .max_age(max_age)
+        .same_site(SameSite::Strict)
+        .path("/")
         .build()
 }
 
@@ -115,57 +137,59 @@ async fn redirect_route(
         return Redirect::to("/").into_response();
     }
 
-    let old_state = match jar.get(LOGIN_CSRF_COOKIE) {
-        Some(old_state) => old_state.value().to_string(),
-        None => {
-            error!("User tried accessing redirect route without csrf cookie");
-            return (
-                StatusCode::BAD_REQUEST,
-                format!("Missing {LOGIN_CSRF_COOKIE} cookie"),
-            )
-                .into_response();
-        }
-    };
-
-    let pkce_verifier = match jar.get(LOGIN_CSRF_COOKIE) {
-        Some(cookie) => match serde_json::from_str(cookie.value()) {
-            Err(_) => {
-                return (StatusCode::BAD_REQUEST, "Invalid pkce verifier cookie").into_response();
-            }
+    let login_cookie: LoginCookie = match jar.get(LOGIN_STATE_COOKIE) {
+        Some(raw_cookie) => match serde_json::from_str(raw_cookie.value()) {
             Ok(cookie) => cookie,
+            Err(err) => {
+                warn!(?err, "Error while deserializing login_state cookie");
+                jar = jar.remove(LOGIN_STATE_COOKIE);
+                return (
+                    StatusCode::BAD_REQUEST,
+                    jar,
+                    "Invalid login_state cookie".to_string(),
+                )
+                    .into_response();
+            }
         },
         None => {
-            error!("User tried accessing redirect route without csrf cookie");
+            error!("User tried accessing redirect route without login_state cookie");
             return (
                 StatusCode::BAD_REQUEST,
-                format!("Missing {LOGIN_CSRF_COOKIE} cookie"),
+                "Missing login_state cookie".to_string(),
             )
                 .into_response();
         }
     };
 
-    let next_url = jar
-        .get(LOGIN_NEXT_URL_COOKIE)
-        .map(|cookie| cookie.value().to_string());
-
-    jar = jar
-        .remove(LOGIN_CSRF_COOKIE)
-        .remove(LOGIN_PKCE_COOKIE)
-        .remove(LOGIN_NEXT_URL_COOKIE);
+    jar = jar.remove(LOGIN_STATE_COOKIE);
 
     let AuthzResp {
         state: new_state,
         code,
     } = query_params;
 
-    if old_state != *new_state.secret() {
+    if login_cookie.csrf_token != new_state {
         return (StatusCode::BAD_REQUEST, jar, "csrf state doesn't match").into_response();
     }
 
-    let token_response = auth_state
-        .oauth2_client
+    let token_response = match auth_state
+        .client
         .exchange_code(AuthorizationCode::new(code))
-        .set_pkce_verifier(pkce_verifier)
+    {
+        Ok(res) => res,
+        Err(err) => {
+            error!(?err, "error while trying to exchange code for bearer");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                jar,
+                "Error while trying to exchange code for bearer".to_string(),
+            )
+                .into_response();
+        }
+    };
+
+    let token_response = token_response
+        .set_pkce_verifier(login_cookie.pkce_verifier)
         .request_async(&auth_state.http_client)
         .await;
 
@@ -182,41 +206,75 @@ async fn redirect_route(
         Ok(token_response) => token_response,
     };
 
-    let bearer = token_response.access_token().secret();
-    let refresh_token = token_response.refresh_token().map(|t| t.secret());
+    let access_token = token_response.access_token();
+    let id_token = token_response.id_token().unwrap();
+    let refresh_token = token_response.refresh_token();
 
     if refresh_token.is_none() {
-        warn!("Refresh token is none, activate refresh tokens for better security");
+        warn!("Refresh token is missing, activate refresh tokens for better security");
+    }
+
+    let id_token_verifier = auth_state.client.id_token_verifier();
+    let claims = id_token
+        .claims(&id_token_verifier, &login_cookie.nonce)
+        .unwrap();
+
+    if let Some(expected_access_token_hash) = claims.access_token_hash() {
+        let actual_access_token_hash = AccessTokenHash::from_token(
+            token_response.access_token(),
+            id_token.signing_alg().unwrap(),
+            id_token.signing_key(&id_token_verifier).unwrap(),
+        )
+        .unwrap();
+        if actual_access_token_hash != *expected_access_token_hash {
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
     }
 
     // FIXME: Make the duration's here either configurable,
     //        or extract them from the bearer/refresh JWT.
     //        This doesn't make a difference to security,
-    //        as the tokens is checked on every request, but still.
+    //        as the token is checked on every request, but still.
     jar = jar.add(new_secure_cookie(
         BEARER_COOKIE_NAME,
-        bearer.clone(),
+        access_token.clone().into_secret(),
         Duration::days(100),
     ));
 
     if let Some(refresh_token) = refresh_token {
         jar = jar.add(new_secure_cookie(
             REFRESH_COOKIE_NAME,
-            refresh_token.clone(),
+            refresh_token.clone().into_secret(),
             Duration::days(365),
         ));
     }
 
-    (jar, Redirect::to(&next_url.unwrap_or("/".to_string()))).into_response()
+    info!(
+        user_id = claims.subject().as_str(),
+        email = ?claims.email(),
+        "Successfully logged in user"
+    );
+
+    (
+        jar,
+        Redirect::to(&login_cookie.next_url.unwrap_or("/".to_string())),
+    )
+        .into_response()
 }
 
-// pub type Oauth2Client =
-//     BasicClient<EndpointSet, EndpointNotSet, EndpointNotSet, EndpointNotSet, EndpointSet>;
+pub type OIDCClient = openidconnect::core::CoreClient<
+    EndpointSet,
+    EndpointNotSet,
+    EndpointNotSet,
+    EndpointNotSet,
+    EndpointMaybeSet,
+    EndpointMaybeSet,
+>;
 
 #[derive(Clone)]
 pub struct AuthState {
-    // pub jwk_set: JwkSet,
-    pub oauth2_client: Oauth2Client,
+    pub jwk_set: JwkSet,
+    pub client: OIDCClient,
     pub http_client: reqwest::Client,
 }
 
@@ -229,44 +287,27 @@ pub async fn initialize_auth(config: &AppConfig) -> AuthState {
     let provider_metadata = CoreProviderMetadata::discover_async(
         IssuerUrl::new(config.auth_server_url().to_string()).expect("Invalid issuer URL"),
         &http_client,
-    ).await.expect("Couldn't discover OIDC metadata");
+    )
+    .await
+    .expect("Couldn't discover OIDC metadata");
 
-    let redirect_url = RedirectUrl::new(format!("{}{REDIRECT_URL}", config.base_url()))
-        .unwrap();
+    // we can't use the jwk's that the openidconnect crate gives us,
+    // so we convert them to the jsonwebtoken one
+    let oidc_jwks = provider_metadata.jwks();
+    let jwk_set: JwkSet = serde_json::from_str(&serde_json::to_string(oidc_jwks).unwrap()).unwrap();
+
+    let redirect_url = RedirectUrl::new(format!("{}{REDIRECT_URL}", config.base_url())).unwrap();
 
     let client = CoreClient::from_provider_metadata(
         provider_metadata,
         ClientId::new(config.auth_client_id().to_string()),
-        Some(ClientSecret::new(config.auth_client_secret().to_string()))
+        Some(ClientSecret::new(config.auth_client_secret().to_string())),
     )
     .set_redirect_uri(redirect_url);
 
-
-
-    // let server_url = config.auth_server_url();
-
-    // let oauth2_client = BasicClient::new(ClientId::new(config.auth_client_id().to_string()))
-    //     .set_auth_uri(AuthUrl::new(format!("{server_url}/protocol/openid-connect/auth")).unwrap())
-    //     .set_token_uri(
-    //         TokenUrl::new(format!("{server_url}/protocol/openid-connect/token")).unwrap(),
-    //     )
-    //     .set_redirect_uri(
-    //         RedirectUrl::new(format!("{}/auth/redirect", config.base_url())).unwrap(),
-    //     );
-
-    // let jwk_certs_url = format!("{server_url}/protocol/openid-connect/certs");
-
-    // let jwk_set = reqwest::get(jwk_certs_url)
-    //     .await
-    //     .unwrap()
-    //     .json()
-    //     .await
-    //     .unwrap();
-
-
     AuthState {
         jwk_set,
-        oauth2_client,
+        client,
         http_client,
     }
 }
@@ -281,7 +322,7 @@ pub enum BackendError {
         #[from]
         RequestTokenError<
             HttpClientError<reqwest::Error>,
-            StandardErrorResponse<BasicErrorResponseType>,
+            StandardErrorResponse<CoreErrorResponseType>,
         >,
     ),
 
@@ -295,9 +336,11 @@ pub async fn base(
     next: Next,
 ) -> impl IntoResponse {
     let mut jar = CookieJar::from_headers(request.headers());
-    let jwt = jar.get(BEARER_COOKIE_NAME)
+    let jwt = jar
+        .get(BEARER_COOKIE_NAME)
         .map(|jwt| jwt.value().to_string());
-    let refresh = jar.get(REFRESH_COOKIE_NAME)
+    let refresh = jar
+        .get(REFRESH_COOKIE_NAME)
         .map(|refresh| refresh.value().to_string());
 
     // Default context for unauthenticated requests
@@ -309,7 +352,8 @@ pub async fn base(
             Ok(claims) => {
                 user = Some(claims);
             }
-            Err(_) => {
+            Err(err) => {
+                warn!(?err, "Error while trying to check bearer");
                 // Clear potentially compromised cookies
                 jar = jar.remove(BEARER_COOKIE_NAME);
             }
@@ -320,8 +364,9 @@ pub async fn base(
     if user.is_none() {
         if let Some(refresh) = refresh {
             let refresh_token_response = auth_state
-                .oauth2_client
+                .client
                 .exchange_refresh_token(&RefreshToken::new(refresh))
+                .unwrap()
                 .request_async(&auth_state.http_client)
                 .await;
 
@@ -340,7 +385,9 @@ pub async fn base(
                         Ok(claims) => {
                             user = Some(claims);
                         }
-                        Err(_) => {
+                        Err(jwt_err) => {
+                            warn!(?jwt_err, "Error while checking validity of newly requested token. \
+                                Removing bearer & refresh cookies");
                             // Clear potentially compromised cookies
                             jar = jar.remove(BEARER_COOKIE_NAME).remove(REFRESH_COOKIE_NAME);
                         }
@@ -390,18 +437,6 @@ impl std::fmt::Debug for User {
     }
 }
 
-const VALID_ALGORITHMS: &[Algorithm] = &[
-    Algorithm::RS256,
-    Algorithm::RS384,
-    Algorithm::RS512,
-    Algorithm::ES256,
-    Algorithm::ES384,
-    Algorithm::PS256,
-    Algorithm::PS384,
-    Algorithm::PS512,
-    Algorithm::EdDSA,
-];
-
 pub fn check_bearer(
     jwk_set: &JwkSet,
     bearer_token: &str,
@@ -412,10 +447,12 @@ pub fn check_bearer(
 
     let jwk = jwk_set.find(&kid).expect("Invalid key id");
 
+    let key_alg_name = jwk.common.key_algorithm.expect("JWK has no algorithm").to_string();
+    let alg = Algorithm::from_str(&key_alg_name).unwrap();
+
     let decoding_key = DecodingKey::from_jwk(jwk)?;
 
-    let mut validation = Validation::new(VALID_ALGORITHMS[0]);
-    validation.algorithms = VALID_ALGORITHMS.to_vec();
+    let mut validation = Validation::new(alg);
     validation.set_audience(&["plantswap"]);
 
     debug!("Trying to verify JWT");

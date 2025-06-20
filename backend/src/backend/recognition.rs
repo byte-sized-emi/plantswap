@@ -18,8 +18,11 @@ pub trait PlantRecogniser: Clone {
     /// Return 10 plants maximum. All plants returned must be in the
     /// database with those exact detailis (this method can insert them
     /// into the db incase of missing plants).
-    async fn analyze_plant(&self, db: &mut PgConnection, info: &PlantRecognitionInfo)
-        -> Result<Vec<RankedPlant>, Self::E>;
+    async fn analyze_plant(
+        &self,
+        db: &mut PgConnection,
+        info: &PlantRecognitionInfo,
+    ) -> Result<Vec<RankedPlant>, Self::E>;
 }
 
 #[derive(Debug, PartialEq, Serialize, Clone)]
@@ -45,11 +48,19 @@ pub mod plantnet {
     use std::sync::Arc;
 
     use axum::async_trait;
-    use diesel::{ExpressionMethods, Insertable, OptionalExtension, PgConnection, SelectableHelper};
-    use reqwest::{multipart::{Form, Part}, Url};
+    use diesel::{
+        ExpressionMethods, Insertable, OptionalExtension, PgConnection, SelectableHelper,
+    };
+    use reqwest::{
+        Url,
+        multipart::{Form, Part},
+    };
     use serde::Deserialize;
 
-    use crate::{config::AppConfig, models::{InsertPlant, Plant}};
+    use crate::{
+        config::AppConfig,
+        models::{InsertPlant, Plant},
+    };
 
     use super::*;
 
@@ -77,7 +88,11 @@ pub mod plantnet {
 
             let http_client = Arc::new(http_client);
 
-            Self { http_client, base_url, apikey }
+            Self {
+                http_client,
+                base_url,
+                apikey,
+            }
         }
     }
 
@@ -86,16 +101,17 @@ pub mod plantnet {
         type E = PlantNetError;
 
         fn new(config: &AppConfig) -> Self {
-            let base_url = Url::parse(config.plantnet_api_url())
-                .expect("invalid plantnet base url");
+            let base_url =
+                Url::parse(config.plantnet_api_url()).expect("invalid plantnet base url");
 
-            PlantNetRecogniser::from_parts(
-                base_url,
-                config.plantnet_api_key().to_string()
-            )
+            PlantNetRecogniser::from_parts(base_url, config.plantnet_api_key().to_string())
         }
 
-        async fn analyze_plant(&self, db: &mut PgConnection, info: &PlantRecognitionInfo) -> Result<Vec<RankedPlant>, Self::E> {
+        async fn analyze_plant(
+            &self,
+            db: &mut PgConnection,
+            info: &PlantRecognitionInfo,
+        ) -> Result<Vec<RankedPlant>, Self::E> {
             let url = self.base_url.join("identity/all").unwrap();
 
             let mut body = Form::new();
@@ -105,15 +121,19 @@ pub mod plantnet {
                 body = body.part("images", part);
             }
 
-            let response: RecogniseResponse = self.http_client.post(url)
+            let response: RecogniseResponse = self
+                .http_client
+                .post(url)
                 .query(&[
                     ("nb-results", "10"),
                     ("lang", "en"),
-                    ("api-key", &self.apikey)
-                    ])
+                    ("api-key", &self.apikey),
+                ])
                 .multipart(body)
-                .send().await?
-                .json().await?;
+                .send()
+                .await?
+                .json()
+                .await?;
 
             let mut plants = Vec::new();
             for plant in response.results {
@@ -125,13 +145,18 @@ pub mod plantnet {
         }
     }
 
-    fn insert_or_load_plant(db: &mut PgConnection, res: &RecogniseResult) -> Result<Plant, diesel::result::Error> {
+    fn insert_or_load_plant(
+        db: &mut PgConnection,
+        res: &RecogniseResult,
+    ) -> Result<Plant, diesel::result::Error> {
         use crate::schema::plants::dsl::*;
         use diesel::{QueryDsl, RunQueryDsl};
 
-        let plant_in_db = plants.filter(powo_id.eq(&res.powo.id))
+        let plant_in_db = plants
+            .filter(powo_id.eq(&res.powo.id))
             .select(Plant::as_select())
-            .get_result(db).optional()?;
+            .get_result(db)
+            .optional()?;
 
         if let Some(plant_in_db) = plant_in_db {
             Ok(plant_in_db)
@@ -146,7 +171,8 @@ pub mod plantnet {
                 description: "".to_string(),
             };
 
-            insert_plant.insert_into(plants)
+            insert_plant
+                .insert_into(plants)
                 .returning(Plant::as_returning())
                 .get_result(db)
         }
@@ -155,7 +181,7 @@ pub mod plantnet {
     #[derive(Deserialize, Debug)]
     #[serde(rename_all = "camelCase")]
     struct RecogniseResponse {
-        results: Vec<RecogniseResult>
+        results: Vec<RecogniseResult>,
     }
 
     #[derive(Deserialize, Debug)]
@@ -170,7 +196,7 @@ pub mod plantnet {
     #[derive(Deserialize, Debug)]
     #[serde(rename_all = "camelCase")]
     struct Id {
-        id: String
+        id: String,
     }
 
     #[derive(Deserialize, Debug)]

@@ -1,5 +1,5 @@
-use serde::Deserialize;
 use config::{Config, FileFormat};
+use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct AppConfig {
@@ -24,8 +24,10 @@ impl AppConfig {
         Config::builder()
             .add_source(config::File::new("config", FileFormat::Toml).required(false))
             .add_source(config::Environment::with_prefix("PLANTS"))
-            .build().expect("Building config went wrong")
-            .try_deserialize().expect("Config is wrong")
+            .build()
+            .expect("Building config went wrong")
+            .try_deserialize()
+            .expect("Config is wrong")
     }
 
     pub fn base_url(&self) -> &str {

@@ -17,17 +17,20 @@ pub struct PageSelector {
 pub struct Base {
     pub page_selector: PageSelector,
     pub login_button: LoginButton,
-    pub page: Box<dyn DynTemplate>
+    pub page: Box<dyn DynTemplate>,
 }
 
 #[derive(Template)]
-#[template(source = r#"
+#[template(
+    source = r#"
     {{ page_selector|safe }}
     <article id="page">{{ page|safe }}</article>
-"#, ext = "txt")]
+"#,
+    ext = "txt"
+)]
 pub struct PageReplacement {
     pub page_selector: PageSelector,
-    pub page: Box<dyn DynTemplate>
+    pub page: Box<dyn DynTemplate>,
 }
 
 #[derive(Template)]
@@ -39,8 +42,8 @@ pub struct LoginButton {
 pub mod pages {
     use askama_axum::Template;
 
-    use crate::frontend::components;
     use super::generate_insertion_date;
+    use crate::frontend::components;
     pub use crate::models::Listing;
 
     #[derive(Template)]
@@ -60,7 +63,7 @@ pub mod pages {
     #[derive(Template)]
     #[template(path = "pages/show_listing.html")]
     pub struct ShowListing {
-        pub listing: Listing
+        pub listing: Listing,
     }
 
     #[derive(Template)]
@@ -82,7 +85,7 @@ pub mod pages {
     #[derive(Template)]
     #[template(source = "<span class=\"center-page\">{{ error }}</span>", ext = "txt")]
     pub struct Error<'a> {
-        pub error: &'a str
+        pub error: &'a str,
     }
 
     impl<'a> Error<'a> {
@@ -115,14 +118,15 @@ fn generate_insertion_date(insertion_date: &NaiveDateTime) -> (String, String) {
         dur if dur.num_minutes() > 15 => {
             format!("{} minutes ago", dur.num_minutes())
         }
-        _ => {
-            "Just now".to_string()
-        }
+        _ => "Just now".to_string(),
     };
 
     (human_duration, insertion_date.to_string())
 }
 
-fn is_current_selection(selection: &Option<PageSelection>, current_selection: &Option<PageSelection>) -> bool {
+fn is_current_selection(
+    selection: &Option<PageSelection>,
+    current_selection: &Option<PageSelection>,
+) -> bool {
     selection.is_some_and(|s| &Some(s) == current_selection)
 }
