@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
 use auth::{AuthState, initialize_auth};
-use axum::{extract::FromRef, http::HeaderName, middleware, response::Redirect, routing::get, Router};
+use axum::{body::Body, extract::FromRef, http::{HeaderName, Request}, middleware, response::Redirect, routing::get, Router};
 use backend::Backend;
 use config::AppConfig;
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
-use tower_http::{request_id::{MakeRequestId, RequestId}, services::ServeDir, ServiceBuilderExt};
-use tracing::{info, warn};
+use tower_http::{body::Limited, request_id::{MakeRequestId, RequestId}, services::ServeDir, trace::TraceLayer, ServiceBuilderExt};
+use tracing::{info, info_span, warn};
 use tracing_subscriber::EnvFilter;
 use uuid::Uuid;
 
@@ -66,7 +66,23 @@ async fn main() {
                 .catch_panic()
                 .set_x_request_id(UuidRequestId)
                 .propagate_x_request_id()
-                .trace_for_http(),
+                .layer(
+                    TraceLayer::new_for_http()
+                        .make_span_with(|req: &Request<Limited<Body>>| {
+                            let request_id = req.headers()
+                                .get(HeaderName::from_static("x-request-id"))
+                                .map(|h| h.to_str().ok())
+                                .flatten()
+                                .unwrap_or("<unknown>");
+
+                            info_span!(
+                                "request",
+                                method = %req.method(),
+                                uri = %req.uri(),
+                                request_id,
+                            )
+                        })
+                ),
         );
 
     #[cfg(debug_assertions)]

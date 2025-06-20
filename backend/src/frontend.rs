@@ -8,7 +8,7 @@ use axum::{
 };
 use axum_htmx::HxRequest;
 use axum_typed_multipart::{FieldData, TryFromMultipart, TypedMultipart};
-use tracing::error;
+use tracing::{error, info};
 use uuid::Uuid;
 
 use crate::{
@@ -265,6 +265,7 @@ async fn render_homepage(
     HxRequest(is_htmx): HxRequest,
     Extension(auth_session): Extension<Option<UserClaims>>,
 ) -> impl IntoResponse {
+    info!("Rendering homepage");
     let page = templates::pages::Home;
 
     render_htmx_page(
