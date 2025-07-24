@@ -45,7 +45,7 @@ services:
       - postgres
 
   plantswap:
-    image: ghcr.io/schitcrafter/plantswap:latest
+    image: ghcr.io/byte-sized-emi/plantswap:latest
     environment:
       PLANTS_DATABASE_URL: postgres://postgres:postgres@postgres/plant_swap
       PLANTS_S3_ACCESS_KEY: root

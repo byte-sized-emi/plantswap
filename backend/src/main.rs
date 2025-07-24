@@ -28,14 +28,11 @@ struct AppState {
 
 #[tokio::main]
 async fn main() {
-    dotenvy::from_filename(".env.local").ok();
-    dotenvy::dotenv().ok();
+    let config = AppConfig::new();
 
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_env("PLANTS_LOG"))
-        .init();
-
-    let config = Arc::new(AppConfig::new());
+        .with_env_filter(EnvFilter::new(config.log()))
+        .init(); 
 
     let backend = Backend::new(&config).await;
 

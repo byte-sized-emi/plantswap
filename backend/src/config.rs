@@ -3,6 +3,7 @@ use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct AppConfig {
+    log: String,
     base_url: String,
     database_url: String,
     #[serde(default)]
@@ -23,6 +24,9 @@ pub struct AppConfig {
 impl AppConfig {
     /// Read config from env's and a config file
     pub fn new() -> AppConfig {
+        dotenvy::from_filename(".env.local").ok();
+        dotenvy::dotenv().ok();
+        
         Config::builder()
             .add_source(config::File::new("config", FileFormat::Toml).required(false))
             .add_source(config::Environment::with_prefix("PLANTS"))
@@ -30,6 +34,10 @@ impl AppConfig {
             .expect("Building config went wrong")
             .try_deserialize()
             .expect("Config is wrong")
+    }
+
+    pub fn log(&self) -> &str {
+        &self.log
     }
 
     pub fn base_url(&self) -> &str {
